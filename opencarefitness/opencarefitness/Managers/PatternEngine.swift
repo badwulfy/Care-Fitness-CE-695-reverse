@@ -1,0 +1,141 @@
+//
+//  PatternEngine.swift
+//  opencarefitness
+//
+//  Controls the workout flow: timer, pattern progression,
+//  incline scheduling, and manual override (offset).
+//
+
+import Foundation
+
+@Observable
+final class PatternEngine {
+
+    // MARK: - Configuration
+
+    var selectedPattern: WorkoutPattern = .flat
+    var goalType: WorkoutGoalType = .duration
+    var goalDurationSeconds: Int = 2700   // 45 min default
+    var goalDistanceHm: Int = 100         // 10 km default (hectometers)
+    var difficulty: WorkoutDifficulty = .medium
+
+    // MARK: - Runtime State
+
+    var isRunning: Bool = false
+    var isPaused: Bool = false
+    var elapsedSeconds: Int = 0
+    var difficultyMultiplier: Double = 1.0 // Dynamic coefficient applied on top of pattern
+
+    // Computed
+    var currentIncline: Double {
+        let base = selectedPattern.incline(at: progress, multiplier: difficultyMultiplier)
+        return min(32.0, max(0.0, base))
+    }
+
+    var currentResistance: Int {
+        BluetoothManager.inclineToResistance(currentIncline)
+    }
+
+    var progress: Double {
+        switch goalType {
+        case .free:
+            return 0.0 // No time-dilation in free mode
+        case .duration:
+            guard goalDurationSeconds > 0 else { return 0 }
+            return min(1.0, Double(elapsedSeconds) / Double(goalDurationSeconds))
+        case .distance:
+            // Distance progress tracked externally
+            return 0.0
+        }
+    }
+
+    var isGoalReached: Bool {
+        switch goalType {
+        case .free:     return false
+        case .duration: return elapsedSeconds >= goalDurationSeconds
+        case .distance: return false // checked externally
+        }
+    }
+
+    var remainingSeconds: Int {
+        switch goalType {
+        case .duration: return max(0, goalDurationSeconds - elapsedSeconds)
+        case .free, .distance: return 0
+        }
+    }
+
+    var formattedElapsed: String {
+        formatTime(elapsedSeconds)
+    }
+
+    var formattedRemaining: String {
+        formatTime(remainingSeconds)
+    }
+
+    var formattedGoalDuration: String {
+        formatTime(goalDurationSeconds)
+    }
+
+    // MARK: - Timer
+
+    private var timerTask: Task<Void, Never>?
+
+    func start() {
+        guard !isRunning else { return }
+        elapsedSeconds = 0
+        difficultyMultiplier = difficulty.multiplier
+        isRunning = true
+        isPaused = false
+        resumeTimer()
+    }
+
+    func pause() {
+        isPaused = true
+        timerTask?.cancel()
+    }
+
+    func resume() {
+        isPaused = false
+        resumeTimer()
+    }
+
+    func stop() {
+        isRunning = false
+        isPaused = false
+        timerTask?.cancel()
+    }
+
+    func incrementIncline() {
+        let maxAllowed = 15.0 / selectedPattern.maxBaseIncline
+        if difficultyMultiplier < maxAllowed {
+            difficultyMultiplier = min(maxAllowed, difficultyMultiplier + 0.1)
+        }
+    }
+
+    func decrementIncline() {
+        difficultyMultiplier = max(0.1, difficultyMultiplier - 0.1)
+    }
+
+    func resetOffset() {
+        difficultyMultiplier = difficulty.multiplier
+    }
+
+    // MARK: - Private
+
+    private func resumeTimer() {
+        timerTask?.cancel()
+        timerTask = Task { @MainActor [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(1))
+                guard let self, !Task.isCancelled else { return }
+                self.elapsedSeconds += 1
+            }
+        }
+    }
+
+    private func formatTime(_ totalSeconds: Int) -> String {
+        let m = totalSeconds / 60
+        let s = totalSeconds % 60
+        return String(format: "%02d:%02d", m, s)
+    }
+}
