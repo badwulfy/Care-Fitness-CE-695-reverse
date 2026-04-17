@@ -398,8 +398,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = opencarefitness/Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "OpenCareFitness utilise le Bluetooth pour communiquer avec votre vélo elliptique Care Fitness CE-695.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "OpenCareFitness utilise le Bluetooth pour communiquer avec votre vélo elliptique Care Fitness CE-695.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "OpenCareFitness lit votre fréquence cardiaque depuis l'Apple Watch pour un suivi précis pendant l'exercice.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "OpenCareFitness enregistre vos séances dans Apple Santé.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
@@ -446,8 +446,8 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_FILE = opencarefitness/Info.plist;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "OpenCareFitness utilise le Bluetooth pour communiquer avec votre vélo elliptique Care Fitness CE-695.";
+				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "OpenCareFitness utilise le Bluetooth pour communiquer avec votre vélo elliptique Care Fitness CE-695.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "OpenCareFitness lit votre fréquence cardiaque depuis l'Apple Watch pour un suivi précis pendant l'exercice.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "OpenCareFitness enregistre vos séances dans Apple Santé.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;

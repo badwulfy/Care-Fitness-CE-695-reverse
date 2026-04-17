@@ -13,7 +13,7 @@ struct SetupView: View {
     var bleManager: BluetoothManager
     var onStart: () -> Void
 
-    @State private var durationMinutes: Int = 45
+    @State private var durationMinutes: Int = 10
 
     private let columns = [
         GridItem(.adaptive(minimum: 160, maximum: 300), spacing: 16)

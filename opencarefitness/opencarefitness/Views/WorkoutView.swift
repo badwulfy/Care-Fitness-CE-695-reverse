@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct WorkoutView: View {
     var bleManager: BluetoothManager
@@ -18,6 +19,7 @@ struct WorkoutView: View {
     @State private var speedHistory: [Double] = []
     @State private var rpmHistory: [Double] = []
     @State private var showStopConfirm = false
+    @State private var inactiveSeconds: Int = 0
 
     enum ChartMetric: String, CaseIterable, Identifiable {
         case power = "Puissance"
@@ -90,6 +92,23 @@ struct WorkoutView: View {
         ) {
             Button("Arrêter", role: .destructive) { onStop() }
             Button("Annuler", role: .cancel) { }
+        }
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            guard engine.isRunning else { return }
+            
+            let isStale = Date().timeIntervalSince(bleManager.telemetry.lastUpdate) > 5.0
+            
+            if bleManager.telemetry.rpm == 0 || isStale {
+                inactiveSeconds += 1
+                if inactiveSeconds >= 3 && !engine.isPaused {
+                    withAnimation { engine.pause() }
+                }
+            } else {
+                inactiveSeconds = 0
+                if engine.isPaused {
+                    withAnimation { engine.resume() }
+                }
+            }
         }
     }
 
