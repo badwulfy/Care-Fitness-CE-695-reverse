@@ -43,8 +43,14 @@ final class BluetoothManager: NSObject {
 
     // Public state
     var connectionState: BLEConnectionState = .disconnected
+    var isBluetoothPoweredOn: Bool = false
     var batteryLevel: Int?
     var telemetry = Telemetry()
+    
+    // Discovery & Logging
+    var discoveredPeripherals: [CBPeripheral] = []
+    var frameLogs: [FrameLog] = []
+    private let maxLogs = 100
 
     // Target resistance level (1–32), set externally
     var targetResistance: Int = 1
@@ -73,10 +79,20 @@ final class BluetoothManager: NSObject {
         }
         print("[BLE] Début du scan des périphériques...")
         connectionState = .scanning
+        discoveredPeripherals.removeAll()
         centralManager.scanForPeripherals(
-            withServices: nil, // Scan all — the device doesn't always advertise FFF0
+            withServices: nil,
             options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
         )
+    }
+
+    func connect(to peripheral: CBPeripheral) {
+        centralManager.stopScan()
+        self.peripheral = peripheral
+        peripheral.delegate = self
+        connectionState = .connecting
+        print("[BLE] Tentative de connexion à \(peripheral.name ?? "Inconnu")...")
+        centralManager.connect(peripheral, options: nil)
     }
 
     func disconnect() {
@@ -109,6 +125,16 @@ final class BluetoothManager: NSObject {
         return Data(msg)
     }
 
+    private func logFrame(_ data: Data, direction: FrameDirection) {
+        let log = FrameLog(data: data, direction: direction)
+        DispatchQueue.main.async {
+            self.frameLogs.insert(log, at: 0)
+            if self.frameLogs.count > self.maxLogs {
+                self.frameLogs.removeLast()
+            }
+        }
+    }
+
     /// Incline percentage (0–15%) → machine resistance level (12–32).
     static func inclineToResistance(_ incline: Double) -> Int {
         let clamped = min(15.0, max(0.0, incline))
@@ -124,7 +150,7 @@ final class BluetoothManager: NSObject {
     private func sendResistance() {
         guard let writeChar, let peripheral else { return }
         let cmd = Self.resistanceCommand(level: targetResistance)
-        print("[BLE] [ENVOI] CMD Résistance niveau \(targetResistance) (\(cmd.map { String(format: "%02x", $0) }.joined()))")
+        logFrame(cmd, direction: .sent)
         peripheral.writeValue(cmd, for: writeChar, type: .withoutResponse)
     }
 
@@ -163,6 +189,7 @@ final class BluetoothManager: NSObject {
     private func sendInit() {
         guard let writeChar, let peripheral else { return }
         let cmd = Data(BLEConstants.initCommand)
+        logFrame(cmd, direction: .sent)
         peripheral.writeValue(cmd, for: writeChar, type: .withoutResponse)
     }
 }
@@ -171,6 +198,7 @@ final class BluetoothManager: NSObject {
 
 extension BluetoothManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        isBluetoothPoweredOn = (central.state == .poweredOn)
         print("[BLE] Etat du gestionnaire Bluetooth (CBCentralManager) : \(central.state.rawValue)")
         if central.state == .poweredOn, connectionState == .disconnected {
             // Auto-start scanning
@@ -185,14 +213,16 @@ extension BluetoothManager: CBCentralManagerDelegate {
         let matches = BLEConstants.namePrefixes.contains { name.localizedCaseInsensitiveContains($0) }
         guard matches else { return }
 
+        if !discoveredPeripherals.contains(where: { $0.identifier == peripheral.identifier }) {
+            discoveredPeripherals.append(peripheral)
+        }
+        
         print("[BLE] 🔎 Appareil trouvé : \(name) [\(peripheral.identifier)] avec RSSI \(RSSI)")
-
-        central.stopScan()
-        self.peripheral = peripheral
-        peripheral.delegate = self
-        connectionState = .connecting
-        print("[BLE] Tentative de connexion à \(name)...")
-        central.connect(peripheral, options: nil)
+        
+        // Auto-connect if not already connected and not showing selection? 
+        // For now, let's keep it simple: if we are in scanning state, we might want selection.
+        // But to maintain backward compatibility, let's only auto-connect if we don't have a selection UI active.
+        // Actually, let's let the UI handle the connection by calling `connect(to:)`.
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -288,10 +318,28 @@ extension BluetoothManager: CBPeripheralDelegate {
 
         // Telemetry frame
         if data.count >= 12 && data[0] == 0x20 {
-            print("[BLE] [REÇU] Trame télémétrie: \(data.map { String(format:"%02x", $0) }.joined())")
+            logFrame(data, direction: .received)
             telemetry.parse(data: data)
         } else {
+            logFrame(data, direction: .received)
             print("[BLE] [REÇU] Trame inconnue ou configuration (\(data.count) bytes) : \(data.map { String(format:"%02x", $0) }.joined())")
         }
+    }
+}
+
+// MARK: - Logging helper
+
+enum FrameDirection {
+    case sent, received
+}
+
+struct FrameLog: Identifiable {
+    let id = UUID()
+    let timestamp = Date()
+    let data: Data
+    let direction: FrameDirection
+    
+    var hexString: String {
+        data.map { String(format: "%02x", $0) }.joined(separator: " ")
     }
 }

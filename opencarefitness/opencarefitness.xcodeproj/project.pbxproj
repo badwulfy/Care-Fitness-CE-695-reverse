@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		D06DD4C42F93E43A00361D51 /* ConcentricOnboarding in Frameworks */ = {isa = PBXBuildFile; productRef = D06DD4C32F93E43A00361D51 /* ConcentricOnboarding */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		D060A10A2F92B242000D23ED /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D06DD4C42F93E43A00361D51 /* ConcentricOnboarding in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = opencarefitness;
 			packageProductDependencies = (
+				D06DD4C32F93E43A00361D51 /* ConcentricOnboarding */,
 			);
 			productName = opencarefitness;
 			productReference = D060A0FA2F92B240000D23ED /* opencarefitness.app */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = D060A0F12F92B240000D23ED;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				D06DD4C22F93E43A00361D51 /* XCRemoteSwiftPackageReference "ConcentricOnboarding" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = D060A0FB2F92B240000D23ED /* Products */;
 			projectDirPath = "";
@@ -623,6 +632,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D06DD4C22F93E43A00361D51 /* XCRemoteSwiftPackageReference "ConcentricOnboarding" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/exyte/ConcentricOnboarding.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.1.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D06DD4C32F93E43A00361D51 /* ConcentricOnboarding */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D06DD4C22F93E43A00361D51 /* XCRemoteSwiftPackageReference "ConcentricOnboarding" */;
+			productName = ConcentricOnboarding;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = D060A0F22F92B240000D23ED /* Project object */;
 }

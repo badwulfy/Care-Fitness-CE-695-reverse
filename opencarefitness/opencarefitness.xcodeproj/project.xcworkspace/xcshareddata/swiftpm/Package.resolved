@@ -1,0 +1,15 @@
+{
+  "originHash" : "27e558a3f1f7cdfeaf05ef732150a6d5f968650c04b96084a291ceddbd4ac1ff",
+  "pins" : [
+    {
+      "identity" : "concentriconboarding",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/exyte/ConcentricOnboarding.git",
+      "state" : {
+        "revision" : "a8e51cd46e3a32839c3a7fac4142e8af38d61875",
+        "version" : "1.1.1"
+      }
+    }
+  ],
+  "version" : 3
+}

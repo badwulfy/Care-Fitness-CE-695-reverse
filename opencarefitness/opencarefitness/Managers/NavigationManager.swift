@@ -18,23 +18,29 @@ enum AppScreen: Equatable {
 final class NavigationManager {
     // Current screen in the main app flow
     var currentScreen: AppScreen = .setup
-    
+
     // Onboarding management
-    @ObservationIgnored
-    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding: Bool = false
-    
-    // Control for sheets/modals
-    var isShowingSettings: Bool = false
-    
+    var hasCompletedOnboarding: Bool = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding") {
+        didSet {
+            UserDefaults.standard.set(hasCompletedOnboarding, forKey: "hasCompletedOnboarding")
+        }
+    }
+
     func navigate(to screen: AppScreen) {
         withAnimation(.easeInOut(duration: 0.3)) {
             currentScreen = screen
         }
     }
-    
+
     func completeOnboarding() {
         withAnimation {
             hasCompletedOnboarding = true
+        }
+    }
+
+    func resetOnboarding() {
+        withAnimation {
+            hasCompletedOnboarding = false
         }
     }
 }

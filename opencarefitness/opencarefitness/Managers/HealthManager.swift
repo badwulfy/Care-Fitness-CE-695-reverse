@@ -26,7 +26,21 @@ final class HealthManager {
     private var workoutBuilder: HKLiveWorkoutBuilder?
     private var heartRateQuery: HKAnchoredObjectQuery?
 
+    init() {
+        Task { await checkAuthorization() }
+    }
+
     // MARK: - Authorization
+
+    /// Vérifie silencieusement le statut d'autorisation existant sans afficher de dialog.
+    func checkAuthorization() async {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        let hrType = HKObjectType.quantityType(forIdentifier: .heartRate)!
+        let status = store.authorizationStatus(for: hrType)
+        await MainActor.run {
+            isAuthorized = (status == .sharingAuthorized)
+        }
+    }
 
     func requestAuthorization() async {
         guard HKHealthStore.isHealthDataAvailable() else { return }

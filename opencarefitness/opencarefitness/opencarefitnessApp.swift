@@ -56,6 +56,7 @@ struct opencarefitnessApp: App {
                 .environment(engine)
                 .environment(healthManager)
                 .environment(sessionManager)
+                .preferredColorScheme(.dark)
         }
         .modelContainer(sharedModelContainer)
     }
