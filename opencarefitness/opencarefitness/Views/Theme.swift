@@ -6,6 +6,7 @@
 //  Uses iOS 26 / macOS 26 Liquid Glass where available.
 //
 
+import UIKit
 import SwiftUI
 
 // MARK: - Color Palette
@@ -33,11 +34,14 @@ struct GlassPanel: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background {
-                RoundedRectangle(cornerRadius: cornerRadius)
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(.ultraThinMaterial)
             }
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .stroke(.white.opacity(0.1), lineWidth: 1)
+            )
     }
 }
 
@@ -63,5 +67,45 @@ struct NeonGlow: ViewModifier {
 extension View {
     func neonGlow(_ color: Color, radius: CGFloat = 10) -> some View {
         modifier(NeonGlow(color: color, radius: radius))
+    }
+}
+
+// MARK: - Orientation Support
+
+enum DeviceOrientationHelper {
+    static func lockOrientation(_ orientation: UIInterfaceOrientationMask) {
+        // Essential: Update the global lock first
+        AppDelegate.orientationLock = orientation
+        
+        // Force the rotation update for iOS 16+
+        if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { error in
+                print("DEBUG: Orientation update failed: \(error.localizedDescription)")
+            }
+        }
+    }
+}
+
+struct ForceOrientationModifier: ViewModifier {
+    let orientation: UIInterfaceOrientationMask
+    
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    DeviceOrientationHelper.lockOrientation(orientation)
+                }
+            }
+            .onDisappear {
+                if UIDevice.current.userInterfaceIdiom == .phone {
+                    DeviceOrientationHelper.lockOrientation(.allButUpsideDown)
+                }
+            }
+    }
+}
+
+extension View {
+    func forceOrientationOnPhone(_ orientation: UIInterfaceOrientationMask) -> some View {
+        modifier(ForceOrientationModifier(orientation: orientation))
     }
 }

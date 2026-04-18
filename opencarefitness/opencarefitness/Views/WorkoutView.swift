@@ -72,26 +72,28 @@ struct WorkoutView: View {
             } else {
                 // MARK: - iPhone Layout (Current perfect layout)
                 HStack(spacing: 0) {
-                    VStack(spacing: 16) {
+                    VStack(spacing: 0) {
                         chartPanel
                             .frame(maxHeight: .infinity)
+
+                        Spacer(minLength: 16)
 
                         footerControls
                             .frame(height: 56)
                     }
                     .padding(.leading, 16)
                     .padding(.trailing, 8)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 8)
                     .frame(maxWidth: .infinity)
 
                     metricsGrid
-                        .padding(.vertical, 16)
+                        .padding(.vertical, 12)
                         .frame(width: 280)
 
                     resistancePanel
                         .frame(width: 130)
                 }
-                .ignoresSafeArea(.container, edges: .horizontal)
+                .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
             }
         }
         .onChange(of: engine.currentResistance) { _, newValue in
@@ -138,6 +140,7 @@ struct WorkoutView: View {
             }
         }
         .background(Color.appBackground)
+        .forceOrientationOnPhone(.landscape)
     }
 
     // MARK: - Chart Panel
@@ -251,7 +254,7 @@ struct WorkoutView: View {
             .frame(height: 4)
         }
         .padding(20)
-        .glassPanel()
+        .glassPanel(cornerRadius: 32)
     }
 
     private var metricsGrid: some View {
@@ -274,23 +277,35 @@ struct WorkoutView: View {
                 }
             )
         } else {
-            // iPhone: Vertical ScrollView layout (middle panel)
-            let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+            // iPhone: Distributed vertical layout (spread to edges, space in middle)
+            let hSpacing: CGFloat = 12
             
             return AnyView(
-                ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(columns: columns, spacing: 12) {
+                VStack(spacing: 0) {
+                    HStack(spacing: hSpacing) {
                         MetricCard(title: "Pulse \(hrSource)", value: displayedHR > 0 ? "\(displayedHR)" : "--", unit: "bpm", color: .neonRed, icon: "heart.fill", isLarge: false)
                         MetricCard(title: "Chrono", value: engine.formattedElapsed, unit: "", color: .white, isLarge: false)
+                    }
+                    .frame(height: 85)
+                    
+                    Spacer(minLength: 12)
+                    
+                    HStack(spacing: hSpacing) {
                         MetricCard(title: "Puiss.", value: "\(tel.watts)", unit: "W", color: .neonYellow, isLarge: false)
                         MetricCard(title: "Cadence", value: "\(tel.rpm)", unit: "RPM", color: .neonCyan, isLarge: false)
+                    }
+                    .frame(height: 85)
+                    
+                    Spacer(minLength: 12)
+                    
+                    HStack(spacing: hSpacing) {
                         MetricCard(title: "Vitesse", value: String(format: "%.1f", tel.speedKmh), unit: "km/h", color: .neonGreen, isLarge: false)
                         MetricCard(title: "Énergie", value: "\(tel.calories)", unit: "kcal", color: .neonOrange, isLarge: false)
                     }
-                    .padding(.horizontal, 8)
-                    .padding(.bottom, 20)
+                    .frame(height: 85)
                 }
-                .scrollClipDisabled()
+                .padding(.horizontal, 8)
+                .frame(maxHeight: .infinity)
             )
         }
     }
@@ -372,12 +387,8 @@ struct WorkoutView: View {
     // MARK: - Resistance Panel (Right Side)
 
     private var resistancePanel: some View {
-        VStack(spacing: isPad ? 12 : 8) {
-            Text("CONTRÔLE")
-                .font(.system(size: isPad ? 12 : 9, weight: .bold))
-                .tracking(2)
-                .foregroundStyle(.secondary)
-                .padding(.top, isPad ? 16 : 8)
+        VStack(spacing: isPad ? 20 : 12) {
+            Spacer(minLength: 0)
 
             // + Button
             Button {
@@ -389,7 +400,7 @@ struct WorkoutView: View {
                     .font(.system(size: isPad ? 56 : 40, weight: .light, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.9))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glassPanel(cornerRadius: isPad ? 28 : 20)
+                    .glassPanel(cornerRadius: 32)
             }
             .buttonStyle(HitButtonStyle())
 
@@ -414,10 +425,11 @@ struct WorkoutView: View {
                     .font(.system(size: isPad ? 56 : 40, weight: .light, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.9))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glassPanel(cornerRadius: isPad ? 28 : 20)
+                    .glassPanel(cornerRadius: 32)
             }
             .buttonStyle(HitButtonStyle())
-            .padding(.bottom, 8)
+            
+            Spacer(minLength: 0)
         }
         .padding(.horizontal, isPad ? 12 : 8)
         .padding(.trailing, isPad ? 0 : 44) // ON REPOUSSE LE TEXTE POUR PASSER L'ENCOCHE
