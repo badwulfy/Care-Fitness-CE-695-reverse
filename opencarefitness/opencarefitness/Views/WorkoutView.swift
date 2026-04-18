@@ -10,9 +10,10 @@ import SwiftUI
 import Combine
 
 struct WorkoutView: View {
-    var bleManager: BluetoothManager
-    @Bindable var engine: PatternEngine
-    var healthManager: HealthManager
+    @Environment(BluetoothManager.self) private var ble
+    @Environment(PatternEngine.self) private var engine
+    @Environment(HealthManager.self) private var health
+    
     var onStop: () -> Void
 
     private var isPad: Bool {
@@ -35,17 +36,17 @@ struct WorkoutView: View {
 
     // Prefer Apple Watch HR, fallback to machine HR
     private var displayedHR: Int {
-        if healthManager.watchHeartRate > 0 {
-            return healthManager.watchHeartRate
+        if health.watchHeartRate > 0 {
+            return health.watchHeartRate
         }
-        if Date().timeIntervalSince(bleManager.telemetry.lastUpdate) < 10.0 {
-            return bleManager.telemetry.heartRate
+        if Date().timeIntervalSince(ble.telemetry.lastUpdate) < 10.0 {
+            return ble.telemetry.heartRate
         }
         return 0
     }
 
     private var hrSource: String {
-        healthManager.watchHeartRate > 0 ? "⌚" : "🏋️"
+        health.watchHeartRate > 0 ? "⌚" : "🏋️"
     }
 
     var body: some View {
@@ -96,12 +97,12 @@ struct WorkoutView: View {
             }
         }
         .onChange(of: engine.currentResistance) { _, newValue in
-            bleManager.targetResistance = newValue
+            ble.targetResistance = newValue
         }
-        .onChange(of: bleManager.telemetry.watts) { _, newWatts in
+        .onChange(of: ble.telemetry.watts) { _, newWatts in
             let powerNorm = min(1.0, Double(newWatts) / 300.0)
-            let speedNorm = min(1.0, bleManager.telemetry.speedKmh / 40.0)
-            let rpmNorm = min(1.0, Double(bleManager.telemetry.rpm) / 120.0)
+            let speedNorm = min(1.0, ble.telemetry.speedKmh / 40.0)
+            let rpmNorm = min(1.0, Double(ble.telemetry.rpm) / 120.0)
 
             powerHistory.append(powerNorm)
             speedHistory.append(speedNorm)
@@ -124,8 +125,8 @@ struct WorkoutView: View {
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             guard engine.isRunning else { return }
             
-            let isStale = Date().timeIntervalSince(bleManager.telemetry.lastUpdate) > 5.0
-            let isStopped = bleManager.telemetry.rpm == 0 && bleManager.telemetry.speedKmh == 0 && bleManager.telemetry.watts == 0
+            let isStale = Date().timeIntervalSince(ble.telemetry.lastUpdate) > 5.0
+            let isStopped = ble.telemetry.rpm == 0 && ble.telemetry.speedKmh == 0 && ble.telemetry.watts == 0
             
             if isStopped || isStale {
                 inactiveSeconds += 1
@@ -234,7 +235,7 @@ struct WorkoutView: View {
             PatternChartView(
                 pattern: engine.selectedPattern,
                 progress: engine.progress,
-                currentWatts: bleManager.telemetry.watts,
+                currentWatts: ble.telemetry.watts,
                 wattsHistory: selectedMetric == .power ? powerHistory : (selectedMetric == .speed ? speedHistory : rpmHistory),
                 difficultyMultiplier: engine.difficultyMultiplier
             )
@@ -256,7 +257,7 @@ struct WorkoutView: View {
     }
 
     private var metricsGrid: some View {
-        let tel = bleManager.telemetry
+        let tel = ble.telemetry
         
         if isPad {
             // iPad: Horizontal Grid layout (under chart)
@@ -346,7 +347,7 @@ struct WorkoutView: View {
                     } else {
                         engine.pause()
                         // Safety: drop resistance to minimum when paused
-                        bleManager.targetResistance = 1
+                        ble.targetResistance = 1
                     }
                 }
             } label: {
@@ -472,14 +473,12 @@ private func createMockBLE() -> BluetoothManager {
     engine.goalDurationSeconds = 2700
     engine.start()
 
-    return WorkoutView(
-        bleManager: createMockBLE(),
-        engine: engine,
-        healthManager: HealthManager(),
-        onStop: { }
-    )
-    .background(Color.appBackground)
-    .preferredColorScheme(.dark)
+    return WorkoutView(onStop: { })
+        .environment(createMockBLE())
+        .environment(engine)
+        .environment(HealthManager())
+        .background(Color.appBackground)
+        .preferredColorScheme(.dark)
 }
 
 #Preview("Workout — iPad", traits: .landscapeLeft) {
@@ -488,12 +487,10 @@ private func createMockBLE() -> BluetoothManager {
     engine.goalDurationSeconds = 1800
     engine.start()
 
-    return WorkoutView(
-        bleManager: createMockBLE(),
-        engine: engine,
-        healthManager: HealthManager(),
-        onStop: { }
-    )
-    .background(Color.appBackground)
-    .preferredColorScheme(.dark)
+    return WorkoutView(onStop: { })
+        .environment(createMockBLE())
+        .environment(engine)
+        .environment(HealthManager())
+        .background(Color.appBackground)
+        .preferredColorScheme(.dark)
 }

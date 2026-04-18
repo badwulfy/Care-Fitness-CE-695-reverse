@@ -10,7 +10,7 @@ import SwiftUI
 
 struct SummaryView: View {
     let session: WorkoutSession
-    var healthManager: HealthManager
+    @Environment(HealthManager.self) private var health
     var onDismiss: () -> Void
 
     var body: some View {
@@ -176,9 +176,9 @@ private struct SummaryStat: View {
             avgRPM: 65,
             maxIncline: 12.5
         ),
-        healthManager: HealthManager(),
         onDismiss: { }
     )
+    .environment(HealthManager())
     .background(Color.appBackground)
     .preferredColorScheme(.dark)
 }
@@ -198,9 +198,9 @@ private struct SummaryStat: View {
             avgRPM: 65,
             maxIncline: 12.5
         ),
-        healthManager: HealthManager(),
         onDismiss: { }
     )
+    .environment(HealthManager())
     .background(Color.appBackground)
     .preferredColorScheme(.dark)
 }

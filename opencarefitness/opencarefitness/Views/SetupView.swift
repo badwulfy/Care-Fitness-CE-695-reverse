@@ -9,8 +9,9 @@
 import SwiftUI
 
 struct SetupView: View {
-    @Bindable var engine: PatternEngine
-    var bleManager: BluetoothManager
+    @Environment(PatternEngine.self) private var engine
+    @Environment(BluetoothManager.self) private var ble
+    
     var onStart: () -> Void
 
     @State private var durationMinutes: Int = 10
@@ -233,7 +234,7 @@ struct SetupView: View {
                 }
 
                 // MARK: - Start Button
-                StartButton(bleManager: bleManager) {
+                StartButton(ble: ble) {
                     engine.goalDurationSeconds = durationMinutes * 60
                     engine.goalDistanceHm = Int(distanceKm * 10)
                     onStart()
@@ -434,11 +435,11 @@ private struct GoalChip: View {
 // MARK: - Start Button
 
 private struct StartButton: View {
-    var bleManager: BluetoothManager
+    var ble: BluetoothManager
     let action: () -> Void
 
     private var isEnabled: Bool {
-        bleManager.connectionState == .connected
+        ble.connectionState == .connected
     }
 
     var body: some View {
@@ -496,21 +497,17 @@ private struct StepperButton: View {
 // MARK: - Previews
 
 #Preview("Setup — iPhone") {
-    SetupView(
-        engine: PatternEngine(),
-        bleManager: BluetoothManager(),
-        onStart: { }
-    )
+    SetupView(onStart: { })
+        .environment(PatternEngine())
+        .environment(BluetoothManager())
     .background(Color.appBackground)
     .preferredColorScheme(.dark)
 }
 
 #Preview("Setup — iPad Landscape", traits: .landscapeLeft) {
-    SetupView(
-        engine: PatternEngine(),
-        bleManager: BluetoothManager(),
-        onStart: { }
-    )
+    SetupView(onStart: { })
+        .environment(PatternEngine())
+        .environment(BluetoothManager())
     .background(Color.appBackground)
     .preferredColorScheme(.dark)
 }

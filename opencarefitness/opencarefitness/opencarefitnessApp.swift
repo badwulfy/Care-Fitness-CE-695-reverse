@@ -12,6 +12,23 @@ import SwiftData
 struct opencarefitnessApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
+    @State private var navigationManager = NavigationManager()
+    @State private var bleManager = BluetoothManager()
+    @State private var engine = PatternEngine()
+    @State private var healthManager = HealthManager()
+    @State private var sessionManager: WorkoutSessionManager
+
+    init() {
+        let ble = BluetoothManager()
+        let eng = PatternEngine()
+        let health = HealthManager()
+        
+        self._bleManager = State(initialValue: ble)
+        self._engine = State(initialValue: eng)
+        self._healthManager = State(initialValue: health)
+        self._sessionManager = State(initialValue: WorkoutSessionManager(bleManager: ble, engine: eng, healthManager: health))
+    }
+    
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             WorkoutSession.self,
@@ -34,6 +51,11 @@ struct opencarefitnessApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .environment(navigationManager)
+                .environment(bleManager)
+                .environment(engine)
+                .environment(healthManager)
+                .environment(sessionManager)
         }
         .modelContainer(sharedModelContainer)
     }

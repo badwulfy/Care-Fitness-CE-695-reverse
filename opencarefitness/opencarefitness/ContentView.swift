@@ -5,13 +5,6 @@
 //  Root view: navigation between Setup → Workout → Summary screens.
 //  Manages lifecycle, BLE connection, and background safety.
 //
-//  Layout strategy:
-//  • The main content fills the real safe-area, not the whole screen.
-//  • safeAreaInset(edge:) reserves space for the floating pill (top) and
-//    the floating tab bar (bottom) so every ScrollView automatically clears
-//    them on any device — no device-specific magic numbers needed.
-//  • A separate ZStack layer renders the actual floating glass elements.
-//
 
 import SwiftUI
 import Combine
@@ -20,23 +13,10 @@ import UIKit
 #endif
 import SwiftData
 
-// MARK: - App Screen
-
-enum AppScreen: Equatable {
-    case setup
-    case workout
-    case summary
-    case history
-}
-
 // MARK: - Layout Constants
 
 private enum FloatingUI {
-    /// Space reserved above content for the status pill + gap.
-    /// The VStack that shows the pill respects the safe area, so this inset is
-    /// added *on top of* the existing safe-area-top.
     static let topInset: CGFloat   = 60
-    /// Space reserved below content for the tab bar capsule + gap.
     static let bottomInset: CGFloat = 76
 }
 
@@ -45,48 +25,28 @@ private enum FloatingUI {
 struct ContentView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.scenePhase) private var scenePhase
-
-    @State private var screen: AppScreen = .setup
-    @State private var bleManager = BluetoothManager()
-    @State private var engine = PatternEngine()
-    @State private var healthManager = HealthManager()
+    
+    // Remote Managers
+    @Environment(NavigationManager.self) private var nav
+    @Environment(BluetoothManager.self) private var ble
+    @Environment(PatternEngine.self) private var engine
+    @Environment(HealthManager.self) private var health
+    @Environment(WorkoutSessionManager.self) private var sessionManager
+    
     @Namespace private var tabNamespace
-
-    // Workout stats accumulation
-    @State private var hrSamples: [Int] = []
-    @State private var wattsSamples: [Int] = []
-    @State private var rpmSamples: [Int] = []
-    @State private var maxWatts: Int = 0
-    @State private var maxHR: Int = 0
-    @State private var maxIncline: Double = 0
-
-    @State private var lastSession: WorkoutSession?
-
-    private var isPad: Bool {
-        #if canImport(UIKit)
-        return UIDevice.current.userInterfaceIdiom == .pad
-        #else
-        return true
-        #endif
-    }
 
     var body: some View {
         ZStack(alignment: .top) {
-            // ── Background ─────────────────────────────────────────────────
             Color.appBackground.ignoresSafeArea()
 
-            // ── Main Content ───────────────────────────────────────────────
-            // Content fills the normal safe area (no ignoresSafeArea hack).
-            // safeAreaInset() extends the safe area so ScrollViews inside
-            // automatically add inset for the floating pill and tab bar.
             mainContent
                 .safeAreaInset(edge: .top, spacing: 0) {
-                    if screen != .workout {
+                    if nav.currentScreen != .workout {
                         Color.clear.frame(height: FloatingUI.topInset)
                     }
                 }
                 .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if screen != .workout {
+                    if nav.currentScreen != .workout {
                         Color.clear.frame(height: FloatingUI.bottomInset)
                     }
                 }
@@ -103,44 +63,57 @@ struct ContentView: View {
                     )
                 }
 
-            // ── Floating Glass Layer ───────────────────────────────────────
-            if screen != .workout {
+            if nav.currentScreen != .workout {
                 floatingOverlay
             }
         }
         .preferredColorScheme(.dark)
+        .fullScreenCover(isPresented: .init(get: { !nav.hasCompletedOnboarding }, set: { _ in })) {
+            // Placeholder for OnboardingView
+            VStack {
+                Text("Bienvenue sur OpenCare Fitness")
+                    .font(.title)
+                Button("Commencer") {
+                    nav.completeOnboarding()
+                }
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .sheet(isPresented: .init(
+            get: { nav.isShowingSettings },
+            set: { nav.isShowingSettings = $0 }
+        )) {
+            // Placeholder for SettingsView
+            Text("Paramètres")
+        }
         .task {
-            await healthManager.requestAuthorization()
+            await health.requestAuthorization()
         }
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
         }
-        .onChange(of: bleManager.telemetry.heartRate) { _, hr in
-            guard screen == .workout, hr > 0 else { return }
-            hrSamples.append(hr)
-            maxHR = max(maxHR, hr)
+        // Telemetry Monitoring (moved the storage to sessionManager)
+        .onChange(of: ble.telemetry.lastUpdate) { _, _ in
+            guard nav.currentScreen == .workout else { return }
+            sessionManager.updateStats(
+                hr: ble.telemetry.heartRate,
+                watts: ble.telemetry.watts,
+                rpm: ble.telemetry.rpm,
+                incline: engine.currentIncline
+            )
         }
-        .onChange(of: bleManager.telemetry.watts) { _, w in
-            guard screen == .workout else { return }
-            wattsSamples.append(w)
-            maxWatts = max(maxWatts, w)
-        }
-        .onChange(of: bleManager.telemetry.rpm) { _, rpm in
-            if screen == .setup && rpm > 10 && bleManager.connectionState == .connected {
+        .onChange(of: ble.telemetry.rpm) { _, rpm in
+            // Auto-start from Setup
+            if nav.currentScreen == .setup && rpm > 10 && ble.connectionState == .connected {
                 startWorkout()
-            } else if screen == .workout && rpm > 0 {
-                rpmSamples.append(rpm)
             }
         }
-        .onChange(of: bleManager.telemetry.distance) { _, distance in
-            guard screen == .workout else { return }
+        .onChange(of: ble.telemetry.distance) { _, distance in
+            guard nav.currentScreen == .workout else { return }
             engine.currentDistanceHm = distance
         }
-        .onChange(of: engine.currentIncline) { _, incline in
-            maxIncline = max(maxIncline, incline)
-        }
         .onChange(of: engine.isGoalReached) { _, reached in
-            if reached && screen == .workout {
+            if reached && nav.currentScreen == .workout {
                 stopWorkout()
             }
         }
@@ -150,17 +123,16 @@ struct ContentView: View {
 
     @ViewBuilder
     private var mainContent: some View {
-        switch screen {
+        switch nav.currentScreen {
         case .setup:
-            SetupView(engine: engine, bleManager: bleManager, onStart: startWorkout)
+            SetupView(onStart: startWorkout)
         case .workout:
-            WorkoutView(bleManager: bleManager, engine: engine, healthManager: healthManager, onStop: stopWorkout)
+            WorkoutView(onStop: stopWorkout)
         case .summary:
-            if let session = lastSession {
+            if let session = sessionManager.lastSession {
                 SummaryView(
                     session: session,
-                    healthManager: healthManager,
-                    onDismiss: { withAnimation { screen = .setup } }
+                    onDismiss: { nav.navigate(to: .setup) }
                 )
             }
         case .history:
@@ -170,14 +142,8 @@ struct ContentView: View {
 
     // MARK: - Floating Overlay
 
-    /// All floating glass elements rendered above the content layer.
-    /// They live in their own ZStack children so they never interfere with
-    /// content layout.
     @ViewBuilder
     private var floatingOverlay: some View {
-        // ── Floating Elements ────────────────────────
-        // This VStack respects the safe area, so padding values are
-        // relative to the safe area edge — device-independent.
         VStack(spacing: 0) {
             statusPill
                 .padding(.top, 10)
@@ -193,12 +159,12 @@ struct ContentView: View {
 
     private var statusPill: some View {
         HStack(spacing: 10) {
-            BLEStatusBadge(state: bleManager.connectionState)
+            BLEStatusBadge(state: ble.connectionState)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            if bleManager.connectionState == .disconnected || bleManager.connectionState == .error {
+            if ble.connectionState == .disconnected || ble.connectionState == .error {
                 Button {
-                    bleManager.startScanning()
+                    ble.startScanning()
                 } label: {
                     Image(systemName: "bolt.fill")
                         .font(.system(size: 10, weight: .bold))
@@ -211,6 +177,16 @@ struct ContentView: View {
 
             Text(Date.now, format: .dateTime.hour().minute())
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
+            
+            // Settings Button
+            Button {
+                nav.isShowingSettings = true
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.system(size: 14))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 9)
@@ -219,14 +195,7 @@ struct ContentView: View {
                 .fill(.ultraThinMaterial)
                 .overlay {
                     Capsule()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [.white.opacity(0.2), .white.opacity(0.05)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
+                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.2), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                 }
         }
         .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
@@ -237,26 +206,11 @@ struct ContentView: View {
 
     private var bottomTabBar: some View {
         HStack(spacing: 0) {
-            TabButton(
-                title: "Préparation",
-                icon: "play.fill",
-                isActive: screen == .setup,
-                namespace: tabNamespace
-            ) {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                    screen = .setup
-                }
+            TabButton(title: "Préparation", icon: "play.fill", isActive: nav.currentScreen == .setup, namespace: tabNamespace) {
+                nav.navigate(to: .setup)
             }
-
-            TabButton(
-                title: "Historique",
-                icon: "calendar",
-                isActive: screen == .history,
-                namespace: tabNamespace
-            ) {
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
-                    screen = .history
-                }
+            TabButton(title: "Historique", icon: "calendar", isActive: nav.currentScreen == .history, namespace: tabNamespace) {
+                nav.navigate(to: .history)
             }
         }
         .padding(6)
@@ -265,14 +219,7 @@ struct ContentView: View {
                 .fill(.ultraThinMaterial)
                 .overlay {
                     Capsule()
-                        .strokeBorder(
-                            LinearGradient(
-                                colors: [.white.opacity(0.18), .white.opacity(0.05)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
+                        .strokeBorder(LinearGradient(colors: [.white.opacity(0.18), .white.opacity(0.05)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1)
                 }
         }
         .shadow(color: .black.opacity(0.3), radius: 16, y: 8)
@@ -313,83 +260,38 @@ struct ContentView: View {
     // MARK: - Workout Lifecycle
 
     private func startWorkout() {
-        hrSamples = []
-        wattsSamples = []
-        rpmSamples = []
-        maxWatts = 0
-        maxHR = 0
-        maxIncline = 0
-
-        bleManager.targetResistance = engine.currentResistance
-        engine.start()
-
-        Task { await healthManager.startWorkout() }
-
+        sessionManager.start()
+        
         #if os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .phone,
-           let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+        if UIDevice.current.userInterfaceIdiom == .phone, let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
         }
         #endif
 
-        withAnimation(.easeInOut(duration: 0.3)) { screen = .workout }
+        nav.navigate(to: .workout)
     }
 
     private func stopWorkout() {
-        engine.stop()
-        bleManager.targetResistance = 1
-
-        Task { await healthManager.endWorkout() }
-
+        _ = sessionManager.stop(context: modelContext)
+        
         #if os(iOS)
-        if UIDevice.current.userInterfaceIdiom == .phone,
-           let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+        if UIDevice.current.userInterfaceIdiom == .phone, let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
         }
         #endif
 
-        let session = WorkoutSession(
-            date: .now,
-            patternName: engine.selectedPattern.rawValue,
-            durationSeconds: engine.elapsedSeconds,
-            distanceTotal: bleManager.telemetry.distance,
-            caloriesTotal: bleManager.telemetry.calories,
-            avgHeartRate: hrSamples.isEmpty ? 0 : hrSamples.reduce(0, +) / hrSamples.count,
-            maxHeartRate: maxHR,
-            avgWatts: wattsSamples.isEmpty ? 0 : wattsSamples.reduce(0, +) / wattsSamples.count,
-            maxWatts: maxWatts,
-            avgRPM: rpmSamples.isEmpty ? 0 : rpmSamples.reduce(0, +) / rpmSamples.count,
-            maxIncline: maxIncline
-        )
-
-        modelContext.insert(session)
-        lastSession = session
-
-        #if os(iOS)
-        Task {
-            await healthManager.saveWorkoutSummary(
-                duration: Double(session.durationSeconds),
-                calories: Double(session.caloriesTotal),
-                distance: Double(session.distanceTotal) * 100
-            )
-        }
-        #endif
-
-        withAnimation(.easeInOut(duration: 0.3)) { screen = .summary }
+        nav.navigate(to: .summary)
     }
 
-    // MARK: - Background Safety
-
     private func handleScenePhaseChange(_ phase: ScenePhase) {
-        guard screen == .workout else { return }
+        guard nav.currentScreen == .workout else { return }
         switch phase {
         case .background, .inactive:
-            bleManager.targetResistance = 1
+            ble.targetResistance = 1
             if engine.isRunning && !engine.isPaused { engine.pause() }
         case .active:
-            bleManager.targetResistance = engine.currentResistance
-        @unknown default:
-            break
+            ble.targetResistance = engine.currentResistance
+        @unknown default: break
         }
     }
 }
@@ -398,32 +300,23 @@ struct ContentView: View {
 
 private struct BLEStatusBadge: View {
     let state: BLEConnectionState
-
     private var dotColor: Color {
         switch state {
-        case .connected:                                        return .green
-        case .scanning, .connecting, .initializing:            return .yellow
-        case .disconnected:                                     return .gray
-        case .error:                                            return .red
+        case .connected: return .green
+        case .scanning, .connecting, .initializing: return .yellow
+        case .disconnected: return .gray
+        case .error: return .red
         }
     }
-
     var body: some View {
         HStack(spacing: 6) {
             ZStack {
                 if state == .connected {
-                    Circle()
-                        .fill(dotColor.opacity(0.35))
-                        .frame(width: 14, height: 14)
+                    Circle().fill(dotColor.opacity(0.35)).frame(width: 14, height: 14)
                 }
-                Circle()
-                    .fill(dotColor)
-                    .frame(width: 7, height: 7)
+                Circle().fill(dotColor).frame(width: 7, height: 7)
             }
-
-            Text(state.rawValue)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+            Text(state.rawValue).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
         }
     }
 }
@@ -432,13 +325,10 @@ private struct BLEStatusBadge: View {
 
 private struct DeviceBatteryView: View {
     @State private var level: Int = -1
-
     var body: some View {
         HStack(spacing: 3) {
-            Image(systemName: batteryIcon)
-                .font(.system(size: 11))
-            Text(level >= 0 ? "\(level)%" : "--%")
-                .font(.system(size: 11, design: .monospaced))
+            Image(systemName: batteryIcon).font(.system(size: 11))
+            Text(level >= 0 ? "\(level)%" : "--%").font(.system(size: 11, design: .monospaced))
         }
         .foregroundStyle(.secondary)
         .onAppear {
@@ -453,32 +343,18 @@ private struct DeviceBatteryView: View {
             #endif
         }
     }
-
     private var batteryIcon: String {
         switch level {
         case 75...: return "battery.100"
         case 50...: return "battery.75"
         case 25...: return "battery.50"
-        default:    return "battery.25"
+        default: return "battery.25"
         }
     }
-
     #if os(iOS)
     private func updateBattery() {
         let raw = UIDevice.current.batteryLevel
         level = raw >= 0 ? Int(raw * 100) : -1
     }
     #endif
-}
-
-// MARK: - Previews
-
-#Preview("App — iPhone") {
-    ContentView()
-        .modelContainer(for: WorkoutSession.self, inMemory: true)
-}
-
-#Preview("App — iPad Landscape", traits: .landscapeLeft) {
-    ContentView()
-        .modelContainer(for: WorkoutSession.self, inMemory: true)
 }
