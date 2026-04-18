@@ -8,6 +8,7 @@ import SwiftUI
 struct ResistancePanel: View {
     @Environment(PatternEngine.self) private var engine
     let isPad: Bool
+    var safeAreaTrailing: CGFloat = 0
     
     var body: some View {
         VStack(spacing: isPad ? 20 : 12) {
@@ -52,7 +53,7 @@ struct ResistancePanel: View {
         }
         .padding(.vertical, 20)
         .padding(.horizontal, isPad ? 12 : 8)
-        .padding(.trailing, isPad ? 0 : 44) // ON REPOUSSE LE TEXTE POUR PASSER L'ENCOCHE
+        .padding(.trailing, isPad ? 0 : max(0, safeAreaTrailing - 8)) // Repousse les boutons pour éviter l'encoche
         .frame(maxHeight: .infinity, alignment: .center)
         .background(
             Color.black.opacity(0.4)

@@ -10,7 +10,7 @@ struct StartButton: View {
     let action: () -> Void
 
     private var isEnabled: Bool {
-        ble.connectionState == .connected
+        ble.effectiveConnectionState == .connected
     }
 
     var body: some View {

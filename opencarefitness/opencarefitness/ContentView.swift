@@ -48,28 +48,65 @@ struct ContentView: View {
 
     @ViewBuilder
     private var mainTabView: some View {
-        TabView {
-            Tab {
-                SetupView(onStart: startWorkout)
-            } label: {
-                Label("Préparation", systemImage: "figure.elliptical")
-                    .foregroundStyle(Color.neonCyan)
-            }
+        ZStack(alignment: .bottom) {
+            TabView {
+                Tab {
+                    SetupView(onStart: startWorkout)
+                } label: {
+                    Label("Préparation", systemImage: "figure.elliptical")
+                        .foregroundStyle(Color.neonCyan)
+                }
 
-            Tab {
-                HistoryView()
-            } label: {
-                Label("Historique", systemImage: "calendar")
-                    .foregroundStyle(Color.neonPurple)
-            }
+                Tab {
+                    HistoryView()
+                } label: {
+                    Label("Historique", systemImage: "calendar")
+                        .foregroundStyle(Color.neonPurple)
+                }
 
-            Tab(role: .search) {
-                SettingsView()
-            } label: {
-                Label("Réglages", systemImage: "gearshape.fill")
+                Tab(role: .search) {
+                    SettingsView()
+                } label: {
+                    Label("Réglages", systemImage: "gearshape.fill")
+                }
             }
+            .tint(Color.neonCyan)
+
+            // Liquid Glass ambient haze just above the tab bar
+            tabBarBlurHaze
         }
-        .tint(Color.neonCyan)
+    }
+
+    @ViewBuilder
+    private var tabBarBlurHaze: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .frame(height: 1)
+            .mask {
+                LinearGradient(
+                    colors: [.clear, .white],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .overlay {
+                // Soft neon glow line
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                Color.neonCyan.opacity(0.0),
+                                Color.neonCyan.opacity(0.18),
+                                Color.neonPurple.opacity(0.10),
+                                Color.neonCyan.opacity(0.0)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .blur(radius: 6)
+            }
+            .padding(.bottom, 82) // juste au-dessus de la tab bar native
     }
 
     @ViewBuilder
@@ -118,7 +155,7 @@ struct ContentView: View {
     }
 
     private func checkAutoStart() {
-        if nav.currentScreen == .setup && ble.telemetry.rpm > 10 && ble.connectionState == .connected {
+        if nav.currentScreen == .setup && ble.telemetry.rpm > 10 && ble.effectiveConnectionState == .connected {
             startWorkout()
         }
     }

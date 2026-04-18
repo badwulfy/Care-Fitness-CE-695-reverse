@@ -19,14 +19,14 @@ struct SettingsView: View {
                         // Device Section
                         settingsSection("Appareil Bluetooth") {
                             VStack(spacing: 12) {
-                                if let peripheral = (ble.connectionState == .connected ? "Connecté" : "Non connecté") {
+                                if let peripheral = (ble.effectiveConnectionState == .connected ? "Connecté" : "Non connecté") {
                                     HStack {
                                         Image(systemName: "cpu")
                                             .foregroundStyle(Color.neonCyan)
-                                        Text(ble.connectionState.rawValue)
+                                        Text(ble.effectiveConnectionState.rawValue)
                                             .font(.headline)
                                         Spacer()
-                                        if ble.connectionState == .connected {
+                                        if ble.effectiveConnectionState == .connected {
                                             Button("Déconnecter") {
                                                 ble.disconnect()
                                             }
@@ -55,7 +55,7 @@ struct SettingsView: View {
                                             HStack {
                                                 Text(p.name ?? "Inconnu")
                                                 Spacer()
-                                                if ble.connectionState == .connected {
+                                                if ble.effectiveConnectionState == .connected {
                                                     Image(systemName: "checkmark.circle.fill")
                                                         .foregroundStyle(.green)
                                                 }
@@ -106,19 +106,65 @@ struct SettingsView: View {
                             }
                         }
                         
-                        // Logs Section
+                        // Debug Section
                         settingsSection("Debug & Logs") {
-                            Button {
-                                showingLogs = true
-                            } label: {
-                                HStack {
-                                    Label("Détail des trames Bluetooth", systemImage: "terminal")
+                            VStack(spacing: 14) {
+                                // Force connected toggle
+                                HStack(spacing: 12) {
+                                    Image(systemName: "antenna.radiowaves.left.and.right")
+                                        .foregroundStyle(.orange)
+                                        .frame(width: 20)
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Forcer l'état connecté")
+                                            .font(.subheadline)
+                                            .foregroundStyle(.white)
+                                        Text("Simule le BLE sans hardware")
+                                            .font(.caption2)
+                                            .foregroundStyle(.orange.opacity(0.8))
+                                    }
+
                                     Spacer()
-                                    Image(systemName: "chevron.right")
-                                        .font(.caption)
+
+                                    Toggle("", isOn: Binding(
+                                        get: { ble.isDebugForceConnected },
+                                        set: { ble.isDebugForceConnected = $0 }
+                                    ))
+                                    .labelsHidden()
+                                    .tint(.orange)
                                 }
+
+                                if ble.isDebugForceConnected {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundStyle(.orange)
+                                            .font(.caption)
+                                        Text("Mode debug actif — l'état connecté est simulé")
+                                            .font(.caption)
+                                            .foregroundStyle(.orange)
+                                    }
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(.orange.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .transition(.move(edge: .top).combined(with: .opacity))
+                                }
+
+                                Divider().background(.white.opacity(0.1))
+
+                                Button {
+                                    showingLogs = true
+                                } label: {
+                                    HStack {
+                                        Label("Détail des trames Bluetooth", systemImage: "terminal")
+                                        Spacer()
+                                        Image(systemName: "chevron.right")
+                                            .font(.caption)
+                                    }
+                                }
+                                .buttonStyle(.plain)
                             }
-                            .buttonStyle(.plain)
+                            .animation(.spring(response: 0.3), value: ble.isDebugForceConnected)
                         }
                         
                         // App Section

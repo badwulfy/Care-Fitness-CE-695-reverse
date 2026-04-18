@@ -46,6 +46,14 @@ final class BluetoothManager: NSObject {
     var isBluetoothPoweredOn: Bool = false
     var batteryLevel: Int?
     var telemetry = Telemetry()
+
+    // Debug override : force l'état connecté sans hardware
+    var isDebugForceConnected: Bool = false
+
+    /// Source de vérité unique pour l'état de connexion (prend en compte le override debug)
+    var effectiveConnectionState: BLEConnectionState {
+        isDebugForceConnected ? .connected : connectionState
+    }
     
     // Discovery & Logging
     var discoveredPeripherals: [CBPeripheral] = []
