@@ -49,32 +49,50 @@ struct WorkoutView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        Group {
+            if isPad {
+                // MARK: - iPad Layout (Restored from commit bf94dc3)
+                HStack(spacing: 0) {
+                    VStack(spacing: 20) {
+                        chartPanel
+                            .frame(maxHeight: .infinity)
+                        
+                        metricsGrid
+                            .padding(.bottom, 8)
+                        
+                        footerControls
+                            .frame(height: 64)
+                    }
+                    .padding(24)
+                    .frame(maxWidth: .infinity)
 
-            // MARK: - Left: Chart + Footer
-            VStack(spacing: 16) {
+                    resistancePanel
+                        .frame(width: 160)
+                }
+            } else {
+                // MARK: - iPhone Layout (Current perfect layout)
+                HStack(spacing: 0) {
+                    VStack(spacing: 16) {
+                        chartPanel
+                            .frame(maxHeight: .infinity)
 
-                // MARK: Chart Panel
-                chartPanel
-                    .frame(maxHeight: .infinity)
+                        footerControls
+                            .frame(height: 56)
+                    }
+                    .padding(.leading, 16)
+                    .padding(.trailing, 8)
+                    .padding(.vertical, 12)
+                    .frame(maxWidth: .infinity)
 
-                // MARK: Footer Controls
-                footerControls
-                    .frame(height: 56)
+                    metricsGrid
+                        .padding(.vertical, 16)
+                        .frame(width: 280)
+
+                    resistancePanel
+                        .frame(width: 130)
+                }
+                .ignoresSafeArea(.container, edges: .horizontal)
             }
-            .padding(.leading, 16) // Marge maîtrisée au lieu de 52pt
-            .padding(.trailing, 8)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity)
-
-            // MARK: - Middle: Metrics Grid (Adaptive)
-            metricsGrid
-                .padding(.vertical, 16)
-                .frame(width: isPad ? 320 : 280)
-
-            // MARK: - Right: Resistance Controls (Adaptive)
-            resistancePanel
-                .frame(width: isPad ? 160 : 130)
         }
         .onChange(of: engine.currentResistance) { _, newValue in
             bleManager.targetResistance = newValue
@@ -120,7 +138,6 @@ struct WorkoutView: View {
             }
         }
         .background(Color.appBackground)
-        .ignoresSafeArea(.container, edges: isPad ? [] : .horizontal)
     }
 
     // MARK: - Chart Panel
@@ -239,73 +256,43 @@ struct WorkoutView: View {
 
     private var metricsGrid: some View {
         let tel = bleManager.telemetry
-        let columns = isPad 
-            ? [GridItem(.flexible())] 
-            : [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
-
-        return ScrollView(.vertical, showsIndicators: false) {
-            LazyVGrid(columns: columns, spacing: isPad ? 16 : 12) {
-                MetricCard(
-                    title: isPad ? "PULSE \(hrSource)" : "Pulse \(hrSource)",
-                    value: displayedHR > 0 ? "\(displayedHR)" : "--",
-                    unit: "bpm",
-                    color: .neonRed,
-                    icon: "heart.fill",
-                    isLarge: isPad
-                )
-
-                MetricCard(
-                    title: isPad ? "CHRONOMÈTRE" : "Chrono",
-                    value: engine.formattedElapsed,
-                    unit: (isPad && engine.goalType == .duration) ? "/ \(engine.formattedGoalDuration)" : "",
-                    color: .white,
-                    isLarge: isPad
-                )
-
-                MetricCard(
-                    title: isPad ? "PUISSANCE" : "Puiss.",
-                    value: "\(tel.watts)",
-                    unit: "W",
-                    color: .neonYellow,
-                    isLarge: isPad
-                )
-
-                MetricCard(
-                    title: isPad ? "CADENCE" : "Cadence",
-                    value: "\(tel.rpm)",
-                    unit: "RPM",
-                    color: .neonCyan,
-                    isLarge: isPad
-                )
-
-                MetricCard(
-                    title: isPad ? "VITESSE" : "Vitesse",
-                    value: String(format: "%.1f", tel.speedKmh),
-                    unit: "km/h",
-                    color: .neonGreen,
-                    isLarge: isPad
-                )
-
-                MetricCard(
-                    title: isPad ? "DISTANCE" : "Dist.",
-                    value: String(format: "%.2f", Double(tel.distance) / 1000.0),
-                    unit: "km",
-                    color: .neonBlue,
-                    isLarge: isPad
-                )
-
-                MetricCard(
-                    title: isPad ? "ÉNERGIE" : "Énergie",
-                    value: "\(tel.calories)",
-                    unit: "kcal",
-                    color: .neonOrange,
-                    isLarge: isPad
-                )
-            }
-            .padding(.horizontal, isPad ? 12 : 8)
-            .padding(.bottom, 20)
+        
+        if isPad {
+            // iPad: Horizontal Grid layout (under chart)
+            return AnyView(
+                Grid(horizontalSpacing: 16, verticalSpacing: 16) {
+                    GridRow {
+                        MetricCard(title: "PULSE \(hrSource)", value: displayedHR > 0 ? "\(displayedHR)" : "--", unit: "bpm", color: .neonRed, icon: "heart.fill", isLarge: true)
+                        MetricCard(title: "PUISSANCE", value: "\(tel.watts)", unit: "W", color: .neonYellow, isLarge: true)
+                        MetricCard(title: "CHRONOMÈTRE", value: engine.formattedElapsed, unit: engine.goalType == .duration ? "/ \(engine.formattedGoalDuration)" : "", color: .white, isLarge: true)
+                    }
+                    GridRow {
+                        MetricCard(title: "CADENCE", value: "\(tel.rpm)", unit: "RPM", color: .neonCyan, isLarge: true)
+                        MetricCard(title: "VITESSE", value: String(format: "%.1f", tel.speedKmh), unit: "km/h", color: .neonGreen, isLarge: true)
+                        MetricCard(title: "DISTANCE", value: String(format: "%.2f", Double(tel.distance) / 1000.0), unit: "km", color: .neonBlue, isLarge: true)
+                    }
+                }
+            )
+        } else {
+            // iPhone: Vertical ScrollView layout (middle panel)
+            let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+            
+            return AnyView(
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        MetricCard(title: "Pulse \(hrSource)", value: displayedHR > 0 ? "\(displayedHR)" : "--", unit: "bpm", color: .neonRed, icon: "heart.fill", isLarge: false)
+                        MetricCard(title: "Chrono", value: engine.formattedElapsed, unit: "", color: .white, isLarge: false)
+                        MetricCard(title: "Puiss.", value: "\(tel.watts)", unit: "W", color: .neonYellow, isLarge: false)
+                        MetricCard(title: "Cadence", value: "\(tel.rpm)", unit: "RPM", color: .neonCyan, isLarge: false)
+                        MetricCard(title: "Vitesse", value: String(format: "%.1f", tel.speedKmh), unit: "km/h", color: .neonGreen, isLarge: false)
+                        MetricCard(title: "Énergie", value: "\(tel.calories)", unit: "kcal", color: .neonOrange, isLarge: false)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.bottom, 20)
+                }
+                .scrollClipDisabled()
+            )
         }
-        .scrollClipDisabled()
     }
 
     // MARK: - Footer Controls
@@ -438,6 +425,16 @@ struct WorkoutView: View {
         .background(
             Color.black.opacity(0.4)
                 .ignoresSafeArea(.all, edges: .all)
+        )
+        .overlay(
+            Group {
+                if isPad {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.05))
+                        .frame(width: 1)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
         )
     }
 }
