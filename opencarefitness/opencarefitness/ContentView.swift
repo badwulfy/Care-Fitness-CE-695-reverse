@@ -125,9 +125,16 @@ struct ContentView: View {
             wattsSamples.append(w)
             maxWatts = max(maxWatts, w)
         }
-        .onChange(of: bleManager.telemetry.rpm) { _, r in
-            guard screen == .workout, r > 0 else { return }
-            rpmSamples.append(r)
+        .onChange(of: bleManager.telemetry.rpm) { _, rpm in
+            if screen == .setup && rpm > 10 && bleManager.connectionState == .connected {
+                startWorkout()
+            } else if screen == .workout && rpm > 0 {
+                rpmSamples.append(rpm)
+            }
+        }
+        .onChange(of: bleManager.telemetry.distance) { _, distance in
+            guard screen == .workout else { return }
+            engine.currentDistanceHm = distance
         }
         .onChange(of: engine.currentIncline) { _, incline in
             maxIncline = max(maxIncline, incline)

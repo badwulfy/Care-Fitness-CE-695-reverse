@@ -24,6 +24,7 @@ final class PatternEngine {
     var isRunning: Bool = false
     var isPaused: Bool = false
     var elapsedSeconds: Int = 0
+    var currentDistanceHm: Int = 0          // Tracking distance for distance goals
     var difficultyMultiplier: Double = 1.0 // Dynamic coefficient applied on top of pattern
 
     // Computed
@@ -44,8 +45,8 @@ final class PatternEngine {
             guard goalDurationSeconds > 0 else { return 0 }
             return min(1.0, Double(elapsedSeconds) / Double(goalDurationSeconds))
         case .distance:
-            // Distance progress tracked externally
-            return 0.0
+            guard goalDistanceHm > 0 else { return 0 }
+            return min(1.0, Double(currentDistanceHm) / Double(goalDistanceHm))
         }
     }
 
@@ -53,7 +54,7 @@ final class PatternEngine {
         switch goalType {
         case .free:     return false
         case .duration: return elapsedSeconds >= goalDurationSeconds
-        case .distance: return false // checked externally
+        case .distance: return currentDistanceHm >= goalDistanceHm
         }
     }
 
@@ -61,6 +62,13 @@ final class PatternEngine {
         switch goalType {
         case .duration: return max(0, goalDurationSeconds - elapsedSeconds)
         case .free, .distance: return 0
+        }
+    }
+
+    var remainingDistanceHm: Int {
+        switch goalType {
+        case .distance: return max(0, goalDistanceHm - currentDistanceHm)
+        case .free, .duration: return 0
         }
     }
 
@@ -83,6 +91,7 @@ final class PatternEngine {
     func start() {
         guard !isRunning else { return }
         elapsedSeconds = 0
+        currentDistanceHm = 0
         difficultyMultiplier = difficulty.multiplier
         isRunning = true
         isPaused = false

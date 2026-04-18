@@ -125,10 +125,11 @@ struct WorkoutView: View {
             guard engine.isRunning else { return }
             
             let isStale = Date().timeIntervalSince(bleManager.telemetry.lastUpdate) > 5.0
+            let isStopped = bleManager.telemetry.rpm == 0 && bleManager.telemetry.speedKmh == 0 && bleManager.telemetry.watts == 0
             
-            if bleManager.telemetry.rpm == 0 || isStale {
+            if isStopped || isStale {
                 inactiveSeconds += 1
-                if inactiveSeconds >= 3 && !engine.isPaused {
+                if inactiveSeconds >= 5 && !engine.isPaused {
                     withAnimation { engine.pause() }
                 }
             } else {
