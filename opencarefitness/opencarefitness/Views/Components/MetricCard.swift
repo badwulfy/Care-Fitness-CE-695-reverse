@@ -23,8 +23,7 @@ struct MetricCard: View {
                     .font(.system(size: 10, weight: .bold))
                     .textCase(.uppercase)
                     .foregroundStyle(.secondary)
-
-                Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                 if let icon {
                     Image(systemName: icon)
@@ -73,14 +72,15 @@ struct DualMetricCard: View {
     var body: some View {
         HStack(spacing: 0) {
             // Left
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(leftTitle)
                     .font(.subheadline)
                     .fontWeight(.bold)
                     .textCase(.uppercase)
                     .tracking(1.5)
                     .foregroundStyle(.secondary)
-                Spacer()
+                    .frame(maxHeight: .infinity, alignment: .topLeading)
+
                 HStack(alignment: .lastTextBaseline, spacing: 4) {
                     Text(leftValue)
                         .font(.system(size: 32, weight: .bold, design: .monospaced))
@@ -102,14 +102,15 @@ struct DualMetricCard: View {
                 .padding(.vertical, 8)
 
             // Right
-            VStack(alignment: .trailing, spacing: 8) {
+            VStack(alignment: .trailing, spacing: 0) {
                 Text(rightTitle)
                     .font(.subheadline)
                     .fontWeight(.bold)
                     .textCase(.uppercase)
                     .tracking(1.5)
                     .foregroundStyle(.secondary)
-                Spacer()
+                    .frame(maxHeight: .infinity, alignment: .topTrailing)
+
                 HStack(alignment: .lastTextBaseline, spacing: 4) {
                     Text(rightValue)
                         .font(.system(size: 32, weight: .bold, design: .monospaced))

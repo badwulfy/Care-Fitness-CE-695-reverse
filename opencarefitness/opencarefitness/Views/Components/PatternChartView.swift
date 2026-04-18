@@ -83,7 +83,7 @@ struct PatternPreviewChart: View {
         Chart {
             ForEach(Array(samples.enumerated()), id: \.offset) { index, value in
                 BarMark(
-                    x: .value("T", index),
+                    x: .value("T", String(index)),
                     y: .value("V", max(0.5, value))
                 )
                 .foregroundStyle(

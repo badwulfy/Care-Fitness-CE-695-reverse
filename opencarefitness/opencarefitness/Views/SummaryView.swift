@@ -15,117 +15,112 @@ struct SummaryView: View {
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
-            VStack(spacing: 0) {
-                Spacer(minLength: 40)
+            VStack(spacing: 24) {
 
-                VStack(spacing: 24) {
+                // MARK: - Title
+                VStack(spacing: 8) {
+                    Image(systemName: "trophy.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(Color.neonCyan)
+                        .shadow(color: Color.neonCyan.opacity(0.5), radius: 15)
 
-                    // MARK: - Title
-                    VStack(spacing: 8) {
-                        Image(systemName: "trophy.fill")
-                            .font(.system(size: 40))
-                            .foregroundStyle(Color.neonCyan)
-                            .shadow(color: Color.neonCyan.opacity(0.5), radius: 15)
+                    Text("Excellent Travail !")
+                        .font(.system(size: 28, weight: .heavy))
+                        .tracking(1)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
 
-                        Text("Excellent Travail !")
-                            .font(.system(size: 28, weight: .heavy))
-                            .tracking(1)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-
-                        Text("\(session.patternName) • \(formatDuration(session.durationSeconds))")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    // MARK: - Stats Grid
-                    LazyVGrid(
-                        columns: [
-                            GridItem(.flexible(), spacing: 12),
-                            GridItem(.flexible(), spacing: 12)
-                        ],
-                        spacing: 12
-                    ) {
-                        SummaryStat(
-                            label: "Distance",
-                            value: String(format: "%.1f km", Double(session.distanceTotal) / 10.0),
-                            color: .white
-                        )
-                        SummaryStat(
-                            label: "Énergie",
-                            value: "\(session.caloriesTotal) kcal",
-                            color: .neonOrange
-                        )
-                        SummaryStat(
-                            label: "Puis. Moy.",
-                            value: "\(session.avgWatts) W",
-                            color: .neonYellow
-                        )
-                        SummaryStat(
-                            label: "FC Moy.",
-                            value: session.avgHeartRate > 0 ? "\(session.avgHeartRate) bpm" : "-- bpm",
-                            color: .neonRed
-                        )
-                        SummaryStat(
-                            label: "Cadence",
-                            value: "\(session.avgRPM) RPM",
-                            color: .neonCyan
-                        )
-                        SummaryStat(
-                            label: "Pente Max",
-                            value: String(format: "%.1f %%", session.maxIncline),
-                            color: .neonPurple
-                        )
-                    }
-
-                    // MARK: - Actions
-                    VStack(spacing: 20) {
-                        // Sync Badge
-                        HStack(spacing: 8) {
-                            ZStack {
-                                Image(systemName: "heart.fill")
-                                    .foregroundStyle(.pink)
-                                Image(systemName: "lock.fill")
-                                    .font(.system(size: 8))
-                                    .offset(x: 4, y: 4)
-                                    .foregroundStyle(.white)
-                            }
-                            Text("DONNÉES SÉCURISÉES DANS SANTÉ")
-                        }
-                        .font(.caption2.weight(.bold))
+                    Text("\(session.patternName) • \(formatDuration(session.durationSeconds))")
+                        .font(.subheadline)
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Color.white.opacity(0.05))
-                        .clipShape(Capsule())
-
-                        // Return button
-                        Button(action: onDismiss) {
-                            HStack(spacing: 12) {
-                                Image(systemName: "arrow.left")
-                                Text("RETOUR AU SETUP")
-                                    .fontWeight(.bold)
-                                    .tracking(1)
-                            }
-                            .font(.callout)
-                            .padding(.vertical, 18)
-                            .frame(maxWidth: .infinity)
-                            .glassPanel(cornerRadius: 30)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    .padding(.top, 8)
                 }
-                .padding(24)
-                .glassPanel(cornerRadius: 32)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 32)
-                        .stroke(Color.neonCyan.opacity(0.2), lineWidth: 1)
-                )
-                .padding(.horizontal, 16)
 
-                Spacer(minLength: 40)
+                // MARK: - Stats Grid
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), spacing: 12),
+                        GridItem(.flexible(), spacing: 12)
+                    ],
+                    spacing: 12
+                ) {
+                    SummaryStat(
+                        label: "Distance",
+                        value: String(format: "%.1f km", Double(session.distanceTotal) / 10.0),
+                        color: .white
+                    )
+                    SummaryStat(
+                        label: "Énergie",
+                        value: "\(session.caloriesTotal) kcal",
+                        color: .neonOrange
+                    )
+                    SummaryStat(
+                        label: "Puis. Moy.",
+                        value: "\(session.avgWatts) W",
+                        color: .neonYellow
+                    )
+                    SummaryStat(
+                        label: "FC Moy.",
+                        value: session.avgHeartRate > 0 ? "\(session.avgHeartRate) bpm" : "-- bpm",
+                        color: .neonRed
+                    )
+                    SummaryStat(
+                        label: "Cadence",
+                        value: "\(session.avgRPM) RPM",
+                        color: .neonCyan
+                    )
+                    SummaryStat(
+                        label: "Pente Max",
+                        value: String(format: "%.1f %%", session.maxIncline),
+                        color: .neonPurple
+                    )
+                }
+
+                // MARK: - Actions
+                VStack(spacing: 20) {
+                    // Sync Badge
+                    HStack(spacing: 8) {
+                        ZStack {
+                            Image(systemName: "heart.fill")
+                                .foregroundStyle(.pink)
+                            Image(systemName: "lock.fill")
+                                .font(.system(size: 8))
+                                .offset(x: 4, y: 4)
+                                .foregroundStyle(.white)
+                        }
+                        Text("DONNÉES SÉCURISÉES DANS SANTÉ")
+                    }
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.white.opacity(0.05))
+                    .clipShape(Capsule())
+
+                    // Return button
+                    Button(action: onDismiss) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "arrow.left")
+                            Text("RETOUR AU SETUP")
+                                .fontWeight(.bold)
+                                .tracking(1)
+                        }
+                        .font(.callout)
+                        .padding(.vertical, 18)
+                        .frame(maxWidth: .infinity)
+                        .glassPanel(cornerRadius: 30)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 8)
             }
+            .padding(24)
+            .glassPanel(cornerRadius: 32)
+            .overlay(
+                RoundedRectangle(cornerRadius: 32)
+                    .stroke(Color.neonCyan.opacity(0.2), lineWidth: 1)
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 40)
         }
         .background(Color.appBackground)
     }

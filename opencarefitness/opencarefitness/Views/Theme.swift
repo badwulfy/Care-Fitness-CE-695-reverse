@@ -38,10 +38,17 @@ struct GlassPanel: ViewModifier {
                     .fill(.ultraThinMaterial)
             }
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
-            .overlay(
+            .overlay {
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .stroke(.white.opacity(0.1), lineWidth: 1)
-            )
+                    .strokeBorder(
+                        LinearGradient(
+                            colors: [.white.opacity(0.18), .white.opacity(0.04)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1
+                    )
+            }
     }
 }
 

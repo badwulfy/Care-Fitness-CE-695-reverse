@@ -140,8 +140,8 @@ private struct DetailStat: View {
                     .fontWeight(.bold)
                     .textCase(.uppercase)
                     .foregroundStyle(.secondary)
-                Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             HStack(alignment: .lastTextBaseline, spacing: 4) {
                 Text(value)
@@ -151,8 +151,8 @@ private struct DetailStat: View {
                     .font(.caption)
                     .fontWeight(.bold)
                     .foregroundStyle(.secondary)
-                Spacer()
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(16)
         .glassPanel(cornerRadius: 16)

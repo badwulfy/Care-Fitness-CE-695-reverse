@@ -37,7 +37,6 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
     case pyramid      = "Pyramide"
     case hiit         = "HIIT"
     case fatBurn      = "Combustion"
-    case steps        = "Escaliers"
     case rollingHills = "Collines"
     case random       = "Aléatoire"
 
@@ -51,7 +50,6 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
         case .pyramid:      return "triangle"
         case .hiit:         return "bolt.fill"
         case .fatBurn:      return "flame.fill"
-        case .steps:        return "stairs"
         case .rollingHills: return "water.waves"
         case .random:       return "dice.fill"
         }
@@ -65,7 +63,6 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
         case .pyramid:      return "Montée jusqu'au milieu, puis descente symétrique."
         case .hiit:         return "Alternance de blocs intenses et de repos."
         case .fatBurn:      return "Montée rapide, haut plateau prolongé en zone aérobie."
-        case .steps:        return "Augmentation par paliers brusques maintenus."
         case .rollingHills: return "Vagues fluides alternant ascensions et descentes."
         case .random:       return "Pente aléatoire sur des cycles aléatoires."
         }
@@ -117,10 +114,6 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
                 base = 8.0 * (1.0 - (t - 0.9) / 0.1)
             }
 
-        case .steps:
-            let step = Int(t * 5.0)
-            let levels: [Double] = [2.0, 4.0, 6.0, 9.0, 12.0]
-            base = levels[min(step, levels.count - 1)]
 
         case .rollingHills:
             base = 6.0 + 6.0 * sin(t * .pi * 4.0 - .pi / 2.0)
@@ -155,7 +148,6 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
         case .pyramid: return 12.0
         case .hiit: return 12.0
         case .fatBurn: return 8.0
-        case .steps: return 12.0
         case .rollingHills: return 12.0
         case .random: return 12.0
         }

@@ -176,8 +176,7 @@ private struct SessionRow: View {
                         .foregroundStyle(.secondary)
                 }
             }
-
-            Spacer()
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             // Key stats
             HStack(spacing: 16) {

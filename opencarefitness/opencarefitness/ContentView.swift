@@ -5,6 +5,13 @@
 //  Root view: navigation between Setup → Workout → Summary screens.
 //  Manages lifecycle, BLE connection, and background safety.
 //
+//  Layout strategy:
+//  • The main content fills the real safe-area, not the whole screen.
+//  • safeAreaInset(edge:) reserves space for the floating pill (top) and
+//    the floating tab bar (bottom) so every ScrollView automatically clears
+//    them on any device — no device-specific magic numbers needed.
+//  • A separate ZStack layer renders the actual floating glass elements.
+//
 
 import SwiftUI
 import Combine
@@ -22,6 +29,17 @@ enum AppScreen: Equatable {
     case history
 }
 
+// MARK: - Layout Constants
+
+private enum FloatingUI {
+    /// Space reserved above content for the status pill + gap.
+    /// The VStack that shows the pill respects the safe area, so this inset is
+    /// added *on top of* the existing safe-area-top.
+    static let topInset: CGFloat   = 60
+    /// Space reserved below content for the tab bar capsule + gap.
+    static let bottomInset: CGFloat = 76
+}
+
 // MARK: - Content View
 
 struct ContentView: View {
@@ -32,6 +50,7 @@ struct ContentView: View {
     @State private var bleManager = BluetoothManager()
     @State private var engine = PatternEngine()
     @State private var healthManager = HealthManager()
+    @Namespace private var tabNamespace
 
     // Workout stats accumulation
     @State private var hrSamples: [Int] = []
@@ -41,49 +60,54 @@ struct ContentView: View {
     @State private var maxHR: Int = 0
     @State private var maxIncline: Double = 0
 
-    // Summary session for the summary screen
     @State private var lastSession: WorkoutSession?
 
+    private var isPad: Bool {
+        #if canImport(UIKit)
+        return UIDevice.current.userInterfaceIdiom == .pad
+        #else
+        return true
+        #endif
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            // MARK: - Top Bar
-            topBar
-                .frame(height: 52)
+        ZStack(alignment: .top) {
+            // ── Background ─────────────────────────────────────────────────
+            Color.appBackground.ignoresSafeArea()
 
-            // MARK: - Main Content
-            Group {
-                switch screen {
-                case .setup:
-                    SetupView(
-                        engine: engine,
-                        bleManager: bleManager,
-                        onStart: startWorkout
-                    )
-
-                case .workout:
-                    WorkoutView(
-                        bleManager: bleManager,
-                        engine: engine,
-                        healthManager: healthManager,
-                        onStop: stopWorkout
-                    )
-
-                case .summary:
-                    if let session = lastSession {
-                        SummaryView(
-                            session: session,
-                            healthManager: healthManager,
-                            onDismiss: { withAnimation { screen = .setup } }
-                        )
+            // ── Main Content ───────────────────────────────────────────────
+            // Content fills the normal safe area (no ignoresSafeArea hack).
+            // safeAreaInset() extends the safe area so ScrollViews inside
+            // automatically add inset for the floating pill and tab bar.
+            mainContent
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if screen != .workout {
+                        Color.clear.frame(height: FloatingUI.topInset)
                     }
-
-                case .history:
-                    HistoryView()
                 }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if screen != .workout {
+                        Color.clear.frame(height: FloatingUI.bottomInset)
+                    }
+                }
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .clear, location: 0.0),
+                            .init(color: .black, location: 0.05),
+                            .init(color: .black, location: 0.95),
+                            .init(color: .clear, location: 1.0)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+
+            // ── Floating Glass Layer ───────────────────────────────────────
+            if screen != .workout {
+                floatingOverlay
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .background(Color.appBackground)
         .preferredColorScheme(.dark)
         .task {
             await healthManager.requestAuthorization()
@@ -91,7 +115,6 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             handleScenePhaseChange(newPhase)
         }
-        // Update stats while working out
         .onChange(of: bleManager.telemetry.heartRate) { _, hr in
             guard screen == .workout, hr > 0 else { return }
             hrSamples.append(hr)
@@ -116,120 +139,173 @@ struct ContentView: View {
         }
     }
 
-    // MARK: - Top Bar
+    // MARK: - Main Content
 
-    private var topBar: some View {
-        HStack {
-            // Logo
-            HStack(spacing: 0) {
-                Text("CARE")
-                    .fontWeight(.bold)
-                    .foregroundStyle(.white.opacity(0.9))
-                Text("TRAINER")
-                    .fontWeight(.bold)
-                    .foregroundStyle(Color.neonCyan)
-            }
-            .font(.title2)
-            .lineLimit(1)
-            .minimumScaleFactor(0.5)
-            .tracking(2)
-
-            // Nav tabs (only visible when not in workout)
-            if screen != .workout {
-                Spacer()
-
-                HStack(spacing: 4) {
-                    NavTab(title: "SETUP", isActive: screen == .setup) {
-                        withAnimation { screen = .setup }
-                    }
-                    NavTab(title: "HISTORIQUE", isActive: screen == .history) {
-                        withAnimation { screen = .history }
-                    }
-                }
-                .padding(4)
-                .background(Color.white.opacity(0.05))
-                .clipShape(Capsule())
-                .overlay(
-                    Capsule().stroke(Color.white.opacity(0.08), lineWidth: 1)
+    @ViewBuilder
+    private var mainContent: some View {
+        switch screen {
+        case .setup:
+            SetupView(engine: engine, bleManager: bleManager, onStart: startWorkout)
+        case .workout:
+            WorkoutView(bleManager: bleManager, engine: engine, healthManager: healthManager, onStop: stopWorkout)
+        case .summary:
+            if let session = lastSession {
+                SummaryView(
+                    session: session,
+                    healthManager: healthManager,
+                    onDismiss: { withAnimation { screen = .setup } }
                 )
             }
+        case .history:
+            HistoryView()
+        }
+    }
 
-            Spacer()
+    // MARK: - Floating Overlay
 
-            // BLE status
-            HStack(spacing: 12) {
-                BLEStatusBadge(state: bleManager.connectionState)
+    /// All floating glass elements rendered above the content layer.
+    /// They live in their own ZStack children so they never interfere with
+    /// content layout.
+    @ViewBuilder
+    private var floatingOverlay: some View {
+        // ── Floating Elements ────────────────────────
+        // This VStack respects the safe area, so padding values are
+        // relative to the safe area edge — device-independent.
+        VStack(spacing: 0) {
+            statusPill
+                .padding(.top, 10)
+                .frame(maxHeight: .infinity, alignment: .top)
 
-                if bleManager.connectionState == .disconnected || bleManager.connectionState == .error {
-                    Button {
-                        bleManager.startScanning()
-                    } label: {
-                        Text("Connecter")
-                            .font(.caption.weight(.bold))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(Color.neonCyan.opacity(0.2))
-                            .foregroundStyle(Color.neonCyan)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                } else {
-                    HStack(spacing: 4) {
-                        Button {
-                            bleManager.disconnect()
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                                bleManager.startScanning()
-                            }
-                        } label: {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                                .font(.caption.weight(.bold))
-                                .padding(6)
-                                .background(Color.white.opacity(0.1))
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Forcer la reconnexion")
+            bottomTabBar
+                .padding(.horizontal, 20)
+                .padding(.bottom, 10)
+        }
+    }
 
-                        Button {
-                            bleManager.disconnect()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.caption.weight(.bold))
-                                .padding(6)
-                                .background(Color.red.opacity(0.2))
-                                .foregroundStyle(.red)
-                                .clipShape(Circle())
-                        }
-                        .buttonStyle(.plain)
-                        .help("Déconnecter")
-                    }
+    // MARK: - Status Pill
+
+    private var statusPill: some View {
+        HStack(spacing: 10) {
+            BLEStatusBadge(state: bleManager.connectionState)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            if bleManager.connectionState == .disconnected || bleManager.connectionState == .error {
+                Button {
+                    bleManager.startScanning()
+                } label: {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(Color.neonCyan)
                 }
+                .buttonStyle(.plain)
+            }
 
-                DeviceBatteryView()
+            DeviceBatteryView()
 
-                // Clock
-                Text(Date.now, format: .dateTime.hour().minute())
-                    .font(.body.weight(.medium).monospacedDigit())
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.08))
-                    .clipShape(Capsule())
+            Text(Date.now, format: .dateTime.hour().minute())
+                .font(.system(size: 12, weight: .bold, design: .monospaced))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+        .background {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [.white.opacity(0.2), .white.opacity(0.05)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+        }
+        .shadow(color: .black.opacity(0.25), radius: 8, y: 4)
+        .padding(.horizontal, 20)
+    }
+
+    // MARK: - Bottom Tab Bar
+
+    private var bottomTabBar: some View {
+        HStack(spacing: 0) {
+            TabButton(
+                title: "Préparation",
+                icon: "play.fill",
+                isActive: screen == .setup,
+                namespace: tabNamespace
+            ) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    screen = .setup
+                }
+            }
+
+            TabButton(
+                title: "Historique",
+                icon: "calendar",
+                isActive: screen == .history,
+                namespace: tabNamespace
+            ) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) {
+                    screen = .history
+                }
             }
         }
-        .padding(.horizontal, 20)
-        .background(Color(red: 0.03, green: 0.05, blue: 0.09))
-        .overlay(
-            Rectangle()
-                .fill(Color.white.opacity(0.04))
-                .frame(height: 1),
-            alignment: .bottom
-        )
+        .padding(6)
+        .background {
+            Capsule()
+                .fill(.ultraThinMaterial)
+                .overlay {
+                    Capsule()
+                        .strokeBorder(
+                            LinearGradient(
+                                colors: [.white.opacity(0.18), .white.opacity(0.05)],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                }
+        }
+        .shadow(color: .black.opacity(0.3), radius: 16, y: 8)
+    }
+
+    // MARK: - Tab Button
+
+    private struct TabButton: View {
+        let title: String
+        let icon: String
+        let isActive: Bool
+        let namespace: Namespace.ID
+        let action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                HStack(spacing: 8) {
+                    Image(systemName: icon)
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(title)
+                        .font(.system(size: 13, weight: .bold))
+                }
+                .foregroundStyle(isActive ? .black : .white.opacity(0.6))
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background {
+                    if isActive {
+                        Capsule()
+                            .fill(.white)
+                            .matchedGeometryEffect(id: "activeTab", in: namespace)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     // MARK: - Workout Lifecycle
 
     private func startWorkout() {
-        // Reset accumulators
         hrSamples = []
         wattsSamples = []
         rpmSamples = []
@@ -237,52 +313,34 @@ struct ContentView: View {
         maxHR = 0
         maxIncline = 0
 
-        // Set initial resistance
         bleManager.targetResistance = engine.currentResistance
-
-        // Start engine
         engine.start()
 
-        // Start HealthKit workout session (iOS, activates Apple Watch)
-        Task {
-            await healthManager.startWorkout()
-        }
-        
+        Task { await healthManager.startWorkout() }
+
         #if os(iOS)
-        // Auto-rotate to landscape ONLY on iPhone. iPad/Mac users manage their own orientation.
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-                windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
-            }
+        if UIDevice.current.userInterfaceIdiom == .phone,
+           let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
         }
         #endif
 
-        withAnimation(.easeInOut(duration: 0.3)) {
-            screen = .workout
-        }
+        withAnimation(.easeInOut(duration: 0.3)) { screen = .workout }
     }
 
     private func stopWorkout() {
         engine.stop()
-
-        // Safety: reset to minimum resistance
         bleManager.targetResistance = 1
 
-        // End HealthKit session
-        Task {
-            await healthManager.endWorkout()
-        }
-        
+        Task { await healthManager.endWorkout() }
+
         #if os(iOS)
-        // Return to portrait ONLY on iPhone.
-        if UIDevice.current.userInterfaceIdiom == .phone {
-            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-                windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
-            }
+        if UIDevice.current.userInterfaceIdiom == .phone,
+           let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
         }
         #endif
 
-        // Build session record
         let session = WorkoutSession(
             date: .now,
             patternName: engine.selectedPattern.rawValue,
@@ -297,24 +355,20 @@ struct ContentView: View {
             maxIncline: maxIncline
         )
 
-        // Save to SwiftData
         modelContext.insert(session)
         lastSession = session
-        
-        // Auto-save to HealthKit (iOS)
+
         #if os(iOS)
         Task {
             await healthManager.saveWorkoutSummary(
                 duration: Double(session.durationSeconds),
                 calories: Double(session.caloriesTotal),
-                distance: Double(session.distanceTotal) * 100 // hm -> m
+                distance: Double(session.distanceTotal) * 100
             )
         }
         #endif
 
-        withAnimation(.easeInOut(duration: 0.3)) {
-            screen = .summary
-        }
+        withAnimation(.easeInOut(duration: 0.3)) { screen = .summary }
     }
 
     // MARK: - Background Safety
@@ -323,25 +377,12 @@ struct ContentView: View {
         guard screen == .workout else { return }
         switch phase {
         case .background, .inactive:
-            // Safety: reduce resistance to minimum when app is backgrounded
             bleManager.targetResistance = 1
-            if engine.isRunning && !engine.isPaused {
-                engine.pause()
-            }
+            if engine.isRunning && !engine.isPaused { engine.pause() }
         case .active:
-            // Restore engine resistance when coming back
             bleManager.targetResistance = engine.currentResistance
         @unknown default:
             break
-        }
-    }
-
-    private func batteryIcon(_ level: Int) -> String {
-        switch level {
-        case 75...: return "battery.100"
-        case 50...: return "battery.75"
-        case 25...: return "battery.50"
-        default:    return "battery.25"
         }
     }
 }
@@ -353,52 +394,30 @@ private struct BLEStatusBadge: View {
 
     private var dotColor: Color {
         switch state {
-        case .connected:    return .green
-        case .scanning, .connecting, .initializing: return .yellow
-        case .disconnected: return .gray
-        case .error:        return .red
+        case .connected:                                        return .green
+        case .scanning, .connecting, .initializing:            return .yellow
+        case .disconnected:                                     return .gray
+        case .error:                                            return .red
         }
     }
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(dotColor)
-                .frame(width: 8, height: 8)
-                .overlay(
+            ZStack {
+                if state == .connected {
                     Circle()
-                        .fill(dotColor.opacity(0.4))
+                        .fill(dotColor.opacity(0.35))
                         .frame(width: 14, height: 14)
-                        .opacity(state == .connected ? 1 : 0)
-                )
+                }
+                Circle()
+                    .fill(dotColor)
+                    .frame(width: 7, height: 7)
+            }
 
             Text(state.rawValue)
-                .font(.subheadline)
+                .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
         }
-    }
-}
-
-// MARK: - Nav Tab
-
-private struct NavTab: View {
-    let title: String
-    let isActive: Bool
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Text(title)
-                .font(.caption.weight(.bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.5)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-                .background(isActive ? Color.neonCyan.opacity(0.2) : Color.clear)
-                .foregroundStyle(isActive ? Color.neonCyan : .secondary)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.plain)
     }
 }
 
@@ -409,17 +428,10 @@ private struct DeviceBatteryView: View {
 
     var body: some View {
         HStack(spacing: 3) {
-            if level >= 0 {
-                Image(systemName: batteryIcon(level))
-                    .font(.caption2)
-                Text("\(level)%")
-                    .font(.caption2.monospacedDigit())
-            } else {
-                Image(systemName: "battery.100")
-                    .font(.caption2)
-                Text("--%")
-                    .font(.caption2.monospacedDigit())
-            }
+            Image(systemName: batteryIcon)
+                .font(.system(size: 11))
+            Text(level >= 0 ? "\(level)%" : "--%")
+                .font(.system(size: 11, design: .monospaced))
         }
         .foregroundStyle(.secondary)
         .onAppear {
@@ -435,7 +447,7 @@ private struct DeviceBatteryView: View {
         }
     }
 
-    private func batteryIcon(_ level: Int) -> String {
+    private var batteryIcon: String {
         switch level {
         case 75...: return "battery.100"
         case 50...: return "battery.75"
@@ -447,11 +459,7 @@ private struct DeviceBatteryView: View {
     #if os(iOS)
     private func updateBattery() {
         let raw = UIDevice.current.batteryLevel
-        if raw >= 0 {
-            self.level = Int(raw * 100)
-        } else {
-            self.level = -1
-        }
+        level = raw >= 0 ? Int(raw * 100) : -1
     }
     #endif
 }

@@ -75,8 +75,7 @@ struct WorkoutView: View {
                     VStack(spacing: 0) {
                         chartPanel
                             .frame(maxHeight: .infinity)
-
-                        Spacer(minLength: 16)
+                            .padding(.bottom, 16)
 
                         footerControls
                             .frame(height: 56)
@@ -171,8 +170,7 @@ struct WorkoutView: View {
                                 .foregroundStyle(.white.opacity(0.4))
                         }
                     }
-
-                    Spacer()
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
                     // Incline display
                     VStack(alignment: .trailing, spacing: 2) {
@@ -199,8 +197,7 @@ struct WorkoutView: View {
                             .fontWeight(.bold)
                             .tracking(1.5)
                             .foregroundStyle(.secondary)
-                        
-                        Spacer()
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         
                         VStack(alignment: .trailing, spacing: 0) {
                             Text("PENTE")
@@ -281,22 +278,19 @@ struct WorkoutView: View {
             let hSpacing: CGFloat = 12
             
             return AnyView(
-                VStack(spacing: 0) {
+                VStack(spacing: 12) {
                     HStack(spacing: hSpacing) {
                         MetricCard(title: "Pulse \(hrSource)", value: displayedHR > 0 ? "\(displayedHR)" : "--", unit: "bpm", color: .neonRed, icon: "heart.fill", isLarge: false)
                         MetricCard(title: "Chrono", value: engine.formattedElapsed, unit: "", color: .white, isLarge: false)
                     }
                     .frame(height: 85)
                     
-                    Spacer(minLength: 12)
-                    
                     HStack(spacing: hSpacing) {
                         MetricCard(title: "Puiss.", value: "\(tel.watts)", unit: "W", color: .neonYellow, isLarge: false)
                         MetricCard(title: "Cadence", value: "\(tel.rpm)", unit: "RPM", color: .neonCyan, isLarge: false)
                     }
                     .frame(height: 85)
-                    
-                    Spacer(minLength: 12)
+                    .frame(maxHeight: .infinity)
                     
                     HStack(spacing: hSpacing) {
                         MetricCard(title: "Vitesse", value: String(format: "%.1f", tel.speedKmh), unit: "km/h", color: .neonGreen, isLarge: false)
@@ -340,9 +334,8 @@ struct WorkoutView: View {
                     .glassPanel(cornerRadius: 28)
                 }
                 .buttonStyle(.plain)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-
-            Spacer()
 
             // Pause / Resume
             Button {
@@ -388,8 +381,6 @@ struct WorkoutView: View {
 
     private var resistancePanel: some View {
         VStack(spacing: isPad ? 20 : 12) {
-            Spacer(minLength: 0)
-
             // + Button
             Button {
                 withAnimation(.easeOut(duration: 0.1)) {
@@ -428,12 +419,11 @@ struct WorkoutView: View {
                     .glassPanel(cornerRadius: 32)
             }
             .buttonStyle(HitButtonStyle())
-            
-            Spacer(minLength: 0)
         }
+        .padding(.vertical, 20)
         .padding(.horizontal, isPad ? 12 : 8)
         .padding(.trailing, isPad ? 0 : 44) // ON REPOUSSE LE TEXTE POUR PASSER L'ENCOCHE
-        .frame(maxHeight: .infinity)
+        .frame(maxHeight: .infinity, alignment: .center)
         .background(
             Color.black.opacity(0.4)
                 .ignoresSafeArea(.all, edges: .all)
