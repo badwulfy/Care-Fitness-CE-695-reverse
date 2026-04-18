@@ -144,92 +144,11 @@ struct WorkoutView: View {
         .forceOrientationOnPhone(.landscape)
     }
 
-    // MARK: - Chart Panel
+    // MARK: - Subviews
 
     private var chartPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if isPad {
-                // Header: Spacious single-line layout for iPad
-                HStack(alignment: .center) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("PROFIL & TÉLÉMÉTRIE")
-                            .font(.subheadline)
-                            .fontWeight(.bold)
-                            .tracking(2)
-                            .foregroundStyle(.secondary)
-
-                        HStack(spacing: 16) {
-                            Picker("Metric", selection: $selectedMetric) {
-                                ForEach(ChartMetric.allCases) { metric in
-                                    Text(metric.rawValue).tag(metric)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .frame(width: 300)
-
-                            Label("Projection", systemImage: "square.fill")
-                                .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.4))
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // Incline display
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("PENTE")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .foregroundStyle(.secondary)
-                        HStack(alignment: .lastTextBaseline, spacing: 4) {
-                            Text(String(format: "%.1f", engine.currentIncline))
-                                .font(.system(size: 48, weight: .bold, design: .monospaced))
-                                .neonGlow(.neonCyan)
-                            Text("%")
-                                .font(.title3.weight(.bold))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            } else {
-                // Header: Compact two-line layout for iPhone
-                VStack(spacing: 16) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("PROFIL & TÉLÉMÉTRIE")
-                            .font(.caption)
-                            .fontWeight(.bold)
-                            .tracking(1.5)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        VStack(alignment: .trailing, spacing: 0) {
-                            Text("PENTE")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(.secondary)
-                            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                                Text(String(format: "%.1f", engine.currentIncline))
-                                    .font(.system(size: 32, weight: .bold, design: .monospaced))
-                                    .neonGlow(.neonCyan)
-                                Text("%")
-                                    .font(.caption.weight(.bold))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    HStack(spacing: 16) {
-                        Label("Projection", systemImage: "square.fill")
-                            .font(.caption2)
-                            .foregroundStyle(.white.opacity(0.3))
-
-                        Picker("Metric", selection: $selectedMetric) {
-                            ForEach(ChartMetric.allCases) { metric in
-                                Text(metric.rawValue).tag(metric)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-            }
+            WorkoutHeader(selectedMetric: $selectedMetric, isPad: isPad)
 
             // Chart
             PatternChartView(
@@ -260,7 +179,6 @@ struct WorkoutView: View {
         let tel = ble.telemetry
         
         if isPad {
-            // iPad: Horizontal Grid layout (under chart)
             return AnyView(
                 Grid(horizontalSpacing: 16, verticalSpacing: 16) {
                     GridRow {
@@ -276,9 +194,7 @@ struct WorkoutView: View {
                 }
             )
         } else {
-            // iPhone: Distributed vertical layout (spread to edges, space in middle)
             let hSpacing: CGFloat = 12
-            
             return AnyView(
                 VStack(spacing: 12) {
                     HStack(spacing: hSpacing) {
@@ -306,151 +222,12 @@ struct WorkoutView: View {
         }
     }
 
-    // MARK: - Footer Controls
-
     private var footerControls: some View {
-        HStack(spacing: 12) {
-            // Stop button
-            Button {
-                showStopConfirm = true
-            } label: {
-                Image(systemName: "stop.fill")
-                    .font(.title3)
-                    .frame(width: 56, height: 56)
-                    .glassPanel(cornerRadius: 28)
-            }
-            .buttonStyle(.plain)
-
-            // Override indicator
-            if abs(engine.difficultyMultiplier - engine.difficulty.multiplier) > 0.01 {
-                Button {
-                    withAnimation { engine.resetOffset() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.counterclockwise")
-                        Text("RESET")
-                            .font(.caption.weight(.bold))
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(height: 56)
-                    .glassPanel(cornerRadius: 28)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // Pause / Resume
-            Button {
-                withAnimation {
-                    if engine.isPaused {
-                        engine.resume()
-                    } else {
-                        engine.pause()
-                        // Safety: drop resistance to minimum when paused
-                        ble.targetResistance = 1
-                    }
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: engine.isPaused ? "play.fill" : "pause.fill")
-                        .font(.title3)
-                    Text(engine.isPaused ? "REPRENDRE" : "PAUSE")
-                        .font(.subheadline.weight(.bold))
-                        .tracking(2)
-                }
-                .foregroundStyle(engine.isPaused ? AnyShapeStyle(.black) : AnyShapeStyle(Color.neonYellow))
-                .padding(.horizontal, 32)
-                .frame(height: 56)
-                .background(
-                    engine.isPaused
-                        ? AnyShapeStyle(Color.neonCyan)
-                        : AnyShapeStyle(.clear)
-                )
-                .glassPanel(cornerRadius: 28)
-                .overlay(
-                    Capsule()
-                        .stroke(
-                            engine.isPaused ? Color.clear : Color.neonYellow.opacity(0.3),
-                            lineWidth: 1
-                        )
-                )
-            }
-            .buttonStyle(.plain)
-        }
+        WorkoutControls(showStopConfirm: $showStopConfirm)
     }
-
-    // MARK: - Resistance Panel (Right Side)
 
     private var resistancePanel: some View {
-        VStack(spacing: isPad ? 20 : 12) {
-            // + Button
-            Button {
-                withAnimation(.easeOut(duration: 0.1)) {
-                    engine.incrementIncline()
-                }
-            } label: {
-                Text("+")
-                    .font(.system(size: isPad ? 56 : 40, weight: .light, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glassPanel(cornerRadius: 32)
-            }
-            .buttonStyle(HitButtonStyle())
-
-            // Override status
-            VStack(spacing: 2) {
-                Text("OFFSET")
-                    .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(.secondary)
-                Text(abs(engine.difficultyMultiplier - engine.difficulty.multiplier) < 0.01 ? "OFF" : String(format: "x%.2f", engine.difficultyMultiplier))
-                    .font(.system(size: isPad ? 14 : 11, weight: .bold, design: .monospaced))
-                    .foregroundStyle(abs(engine.difficultyMultiplier - engine.difficulty.multiplier) < 0.01 ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.neonCyan))
-            }
-            .padding(.vertical, 4)
-
-            // - Button
-            Button {
-                withAnimation(.easeOut(duration: 0.1)) {
-                    engine.decrementIncline()
-                }
-            } label: {
-                Text("−")
-                    .font(.system(size: isPad ? 56 : 40, weight: .light, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.9))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glassPanel(cornerRadius: 32)
-            }
-            .buttonStyle(HitButtonStyle())
-        }
-        .padding(.vertical, 20)
-        .padding(.horizontal, isPad ? 12 : 8)
-        .padding(.trailing, isPad ? 0 : 44) // ON REPOUSSE LE TEXTE POUR PASSER L'ENCOCHE
-        .frame(maxHeight: .infinity, alignment: .center)
-        .background(
-            Color.black.opacity(0.4)
-                .ignoresSafeArea(.all, edges: .all)
-        )
-        .overlay(
-            Group {
-                if isPad {
-                    Rectangle()
-                        .fill(Color.white.opacity(0.05))
-                        .frame(width: 1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        )
-    }
-}
-
-// MARK: - Hit Button Style (for sweaty-finger tapping)
-
-struct HitButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed ? 0.96 : 1.0)
-            .opacity(configuration.isPressed ? 0.8 : 1.0)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+        ResistancePanel(isPad: isPad)
     }
 }
 
