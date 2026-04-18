@@ -229,7 +229,7 @@ private struct SessionRow: View {
 
 // MARK: - Previews
 
-#Preview("History — With Sessions") {
+#Preview("History — iPhone") {
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
     let container = try! ModelContainer(for: WorkoutSession.self, configurations: config)
 
@@ -262,8 +262,35 @@ private struct SessionRow: View {
         .preferredColorScheme(.dark)
 }
 
-#Preview("History — Empty") {
-    HistoryView()
-        .modelContainer(for: WorkoutSession.self, inMemory: true)
+#Preview("History — iPad Landscape", traits: .landscapeLeft) {
+    let config = ModelConfiguration(isStoredInMemoryOnly: true)
+    let container = try! ModelContainer(for: WorkoutSession.self, configurations: config)
+
+    // Insert sample data
+    let samples: [(String, Int, Int, Int, Int, Int)] = [
+        ("Pyramide",  2700, 128, 412, 142, 185),
+        ("HIIT",      1800,  85, 280, 158, 220),
+        ("Plat",      3600, 180, 520, 125, 150),
+        ("Collines",  2400, 110, 350, 138, 175),
+    ]
+    for (i, s) in samples.enumerated() {
+        let session = WorkoutSession(
+            date: Calendar.current.date(byAdding: .day, value: -i, to: .now)!,
+            patternName: s.0,
+            durationSeconds: s.1,
+            distanceTotal: s.2,
+            caloriesTotal: s.3,
+            avgHeartRate: s.4,
+            maxHeartRate: s.4 + 20,
+            avgWatts: s.5,
+            maxWatts: s.5 + 80,
+            avgRPM: 65,
+            maxIncline: 12.0
+        )
+        container.mainContext.insert(session)
+    }
+
+    return HistoryView()
+        .modelContainer(container)
         .preferredColorScheme(.dark)
 }

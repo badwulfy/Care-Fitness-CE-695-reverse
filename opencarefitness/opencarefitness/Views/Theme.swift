@@ -22,6 +22,7 @@ extension Color {
     static let neonGreen  = Color(red: 0.29, green: 0.87, blue: 0.50)
     static let neonOrange = Color(red: 0.98, green: 0.57, blue: 0.24)
     static let neonPurple = Color(red: 0.6, green: 0.3, blue: 1.0)
+    static let neonBlue   = Color(red: 0.2, green: 0.5, blue: 1.0)
 }
 
 // MARK: - Glass Panel Modifier (Liquid Glass)

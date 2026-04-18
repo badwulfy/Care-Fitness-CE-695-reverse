@@ -13,131 +13,121 @@ struct SummaryView: View {
     var healthManager: HealthManager
     var onDismiss: () -> Void
 
-    @State private var isSaved = false
-    @State private var showSaveAnimation = false
-
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 0) {
+                Spacer(minLength: 40)
 
-            VStack(spacing: 32) {
+                VStack(spacing: 24) {
 
-                // MARK: - Title
-                VStack(spacing: 8) {
-                    Image(systemName: "trophy.fill")
-                        .font(.system(size: 48))
-                        .foregroundStyle(Color.neonCyan)
-                        .shadow(color: Color.neonCyan.opacity(0.5), radius: 20)
+                    // MARK: - Title
+                    VStack(spacing: 8) {
+                        Image(systemName: "trophy.fill")
+                            .font(.system(size: 40))
+                            .foregroundStyle(Color.neonCyan)
+                            .shadow(color: Color.neonCyan.opacity(0.5), radius: 15)
 
-                    Text("Excellent Travail !")
-                        .font(.system(size: 36, weight: .heavy))
-                        .tracking(1)
+                        Text("Excellent Travail !")
+                            .font(.system(size: 28, weight: .heavy))
+                            .tracking(1)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
 
-                    Text("\(session.patternName) • \(formatDuration(session.durationSeconds))")
-                        .foregroundStyle(.secondary)
-                }
-
-                // MARK: - Stats Grid
-                LazyVGrid(
-                    columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ],
-                    spacing: 16
-                ) {
-                    SummaryStat(
-                        label: "Distance Totale",
-                        value: String(format: "%.1f km", Double(session.distanceTotal) / 10.0),
-                        color: .white
-                    )
-                    SummaryStat(
-                        label: "Énergie",
-                        value: "\(session.caloriesTotal) kcal",
-                        color: .neonOrange
-                    )
-                    SummaryStat(
-                        label: "Puissance Moy.",
-                        value: "\(session.avgWatts) W",
-                        color: .neonYellow
-                    )
-                    SummaryStat(
-                        label: "FC Moyenne",
-                        value: session.avgHeartRate > 0 ? "\(session.avgHeartRate) bpm" : "-- bpm",
-                        color: .neonRed
-                    )
-                    SummaryStat(
-                        label: "Cadence Moy.",
-                        value: "\(session.avgRPM) RPM",
-                        color: .neonCyan
-                    )
-                    SummaryStat(
-                        label: "Pente Max",
-                        value: String(format: "%.1f %%", session.maxIncline),
-                        color: .neonPurple
-                    )
-                }
-                .padding(.horizontal, 8)
-
-                // MARK: - Actions
-                HStack(spacing: 16) {
-                    // Return button
-                    Button(action: onDismiss) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "arrow.left")
-                            Text("RETOUR")
-                                .fontWeight(.bold)
-                        }
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 14)
-                        .glassPanel(cornerRadius: 28)
+                        Text("\(session.patternName) • \(formatDuration(session.durationSeconds))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
                     }
-                    .buttonStyle(.plain)
 
-                    // Save to Health button (iOS only)
-                    #if os(iOS)
-                    Button {
-                        Task {
-                            await healthManager.saveWorkoutSummary(
-                                duration: Double(session.durationSeconds),
-                                calories: Double(session.caloriesTotal),
-                                distance: Double(session.distanceTotal) * 100 // hm → meters (approx)
-                            )
-                            withAnimation(.spring()) {
-                                isSaved = true
-                                showSaveAnimation = true
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 8) {
-                            Image(systemName: isSaved ? "checkmark" : "heart.fill")
-                            Text(isSaved ? "Enregistré !" : "Sauver dans Santé")
-                                .fontWeight(.bold)
-                        }
-                        .padding(.horizontal, 28)
-                        .padding(.vertical, 14)
-                        .background(isSaved ? Color.neonGreen : Color.neonRed)
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
-                        .shadow(
-                            color: (isSaved ? Color.neonGreen : Color.neonRed).opacity(0.4),
-                            radius: 15
+                    // MARK: - Stats Grid
+                    LazyVGrid(
+                        columns: [
+                            GridItem(.flexible(), spacing: 12),
+                            GridItem(.flexible(), spacing: 12)
+                        ],
+                        spacing: 12
+                    ) {
+                        SummaryStat(
+                            label: "Distance",
+                            value: String(format: "%.1f km", Double(session.distanceTotal) / 10.0),
+                            color: .white
+                        )
+                        SummaryStat(
+                            label: "Énergie",
+                            value: "\(session.caloriesTotal) kcal",
+                            color: .neonOrange
+                        )
+                        SummaryStat(
+                            label: "Puis. Moy.",
+                            value: "\(session.avgWatts) W",
+                            color: .neonYellow
+                        )
+                        SummaryStat(
+                            label: "FC Moy.",
+                            value: session.avgHeartRate > 0 ? "\(session.avgHeartRate) bpm" : "-- bpm",
+                            color: .neonRed
+                        )
+                        SummaryStat(
+                            label: "Cadence",
+                            value: "\(session.avgRPM) RPM",
+                            color: .neonCyan
+                        )
+                        SummaryStat(
+                            label: "Pente Max",
+                            value: String(format: "%.1f %%", session.maxIncline),
+                            color: .neonPurple
                         )
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isSaved)
-                    #endif
-                }
-            }
-            .padding(40)
-            .glassPanel(cornerRadius: 32)
-            .overlay(
-                RoundedRectangle(cornerRadius: 32)
-                    .stroke(Color.neonCyan.opacity(0.2), lineWidth: 1)
-            )
-            .padding(.horizontal, 48)
 
-            Spacer()
+                    // MARK: - Actions
+                    VStack(spacing: 20) {
+                        // Sync Badge
+                        HStack(spacing: 8) {
+                            ZStack {
+                                Image(systemName: "heart.fill")
+                                    .foregroundStyle(.pink)
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 8))
+                                    .offset(x: 4, y: 4)
+                                    .foregroundStyle(.white)
+                            }
+                            Text("DONNÉES SÉCURISÉES DANS SANTÉ")
+                        }
+                        .font(.caption2.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.white.opacity(0.05))
+                        .clipShape(Capsule())
+
+                        // Return button
+                        Button(action: onDismiss) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "arrow.left")
+                                Text("RETOUR AU SETUP")
+                                    .fontWeight(.bold)
+                                    .tracking(1)
+                            }
+                            .font(.callout)
+                            .padding(.vertical, 18)
+                            .frame(maxWidth: .infinity)
+                            .glassPanel(cornerRadius: 30)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.top, 8)
+                }
+                .padding(24)
+                .glassPanel(cornerRadius: 32)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 32)
+                        .stroke(Color.neonCyan.opacity(0.2), lineWidth: 1)
+                )
+                .padding(.horizontal, 16)
+
+                Spacer(minLength: 40)
+            }
         }
+        .background(Color.appBackground)
     }
 
     private func formatDuration(_ seconds: Int) -> String {
@@ -162,8 +152,10 @@ private struct SummaryStat: View {
                 .textCase(.uppercase)
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: 28, weight: .bold, design: .monospaced))
+                .font(.system(size: 22, weight: .bold, design: .monospaced))
                 .neonGlow(color, radius: 8)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
         }
         .padding(16)
         .frame(maxWidth: .infinity)
@@ -172,9 +164,31 @@ private struct SummaryStat: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Previews
 
-#Preview("Summary") {
+#Preview("Summary — iPhone") {
+    SummaryView(
+        session: WorkoutSession(
+            date: .now,
+            patternName: "Vallon",
+            durationSeconds: 2700,
+            distanceTotal: 128,
+            caloriesTotal: 412,
+            avgHeartRate: 142,
+            maxHeartRate: 178,
+            avgWatts: 185,
+            maxWatts: 310,
+            avgRPM: 65,
+            maxIncline: 12.5
+        ),
+        healthManager: HealthManager(),
+        onDismiss: { }
+    )
+    .background(Color.appBackground)
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Summary — iPad Landscape", traits: .landscapeLeft) {
     SummaryView(
         session: WorkoutSession(
             date: .now,

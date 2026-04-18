@@ -16,14 +16,12 @@ struct MetricCard: View {
     var isLarge: Bool = true
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 4) {
             // Title row
             HStack {
                 Text(title)
-                    .font(.subheadline)
-                    .fontWeight(.bold)
+                    .font(.system(size: 10, weight: .bold))
                     .textCase(.uppercase)
-                    .tracking(1.5)
                     .foregroundStyle(.secondary)
 
                 Spacer()
@@ -31,35 +29,33 @@ struct MetricCard: View {
                 if let icon {
                     Image(systemName: icon)
                         .foregroundStyle(color)
-                        .font(.caption)
+                        .font(.system(size: 10))
                 }
             }
 
-            Spacer()
-
             // Value row
-            HStack(alignment: .lastTextBaseline, spacing: 4) {
+            HStack(alignment: .lastTextBaseline, spacing: 2) {
                 Text(value)
                     .font(.system(
-                        size: isLarge ? 48 : 36,
+                        size: isLarge ? 44 : 28,
                         weight: .bold,
                         design: .monospaced
                     ))
-                    .neonGlow(color)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .neonGlow(color, radius: 6)
                     .contentTransition(.numericText())
 
                 if !unit.isEmpty {
                     Text(unit)
-                        .font(.body)
-                        .fontWeight(.bold)
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(.secondary)
-                        .padding(.bottom, 4)
                 }
             }
         }
-        .padding()
+        .padding(12)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-        .glassPanel()
+        .glassPanel(cornerRadius: 16)
     }
 }
 
@@ -88,6 +84,8 @@ struct DualMetricCard: View {
                 HStack(alignment: .lastTextBaseline, spacing: 4) {
                     Text(leftValue)
                         .font(.system(size: 32, weight: .bold, design: .monospaced))
+                        .minimumScaleFactor(0.4)
+                        .lineLimit(1)
                         .foregroundStyle(.white)
                     Text(leftUnit)
                         .font(.body)
@@ -115,6 +113,8 @@ struct DualMetricCard: View {
                 HStack(alignment: .lastTextBaseline, spacing: 4) {
                     Text(rightValue)
                         .font(.system(size: 32, weight: .bold, design: .monospaced))
+                        .minimumScaleFactor(0.4)
+                        .lineLimit(1)
                         .neonGlow(rightColor)
                     Text(rightUnit)
                         .font(.body)

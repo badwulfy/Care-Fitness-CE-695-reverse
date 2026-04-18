@@ -15,6 +15,10 @@ struct WorkoutView: View {
     var healthManager: HealthManager
     var onStop: () -> Void
 
+    private var isPad: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad
+    }
+
     @State private var powerHistory: [Double] = []
     @State private var speedHistory: [Double] = []
     @State private var rpmHistory: [Double] = []
@@ -47,25 +51,30 @@ struct WorkoutView: View {
     var body: some View {
         HStack(spacing: 0) {
 
-            // MARK: - Left: Chart + Metrics + Footer
+            // MARK: - Left: Chart + Footer
             VStack(spacing: 16) {
 
                 // MARK: Chart Panel
                 chartPanel
                     .frame(maxHeight: .infinity)
 
-                // MARK: Metrics Grid
-                metricsGrid
-
                 // MARK: Footer Controls
                 footerControls
                     .frame(height: 56)
             }
-            .padding(16)
+            .padding(.leading, 16) // Marge maîtrisée au lieu de 52pt
+            .padding(.trailing, 8)
+            .padding(.vertical, 12)
+            .frame(maxWidth: .infinity)
 
-            // MARK: - Right: Resistance Controls
+            // MARK: - Middle: Metrics Grid (Adaptive)
+            metricsGrid
+                .padding(.vertical, 16)
+                .frame(width: isPad ? 320 : 280)
+
+            // MARK: - Right: Resistance Controls (Adaptive)
             resistancePanel
-                .frame(width: 140)
+                .frame(width: isPad ? 160 : 130)
         }
         .onChange(of: engine.currentResistance) { _, newValue in
             bleManager.targetResistance = newValue
@@ -110,52 +119,95 @@ struct WorkoutView: View {
                 }
             }
         }
+        .background(Color.appBackground)
+        .ignoresSafeArea(.container, edges: isPad ? [] : .horizontal)
     }
 
     // MARK: - Chart Panel
 
     private var chartPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("PROFIL PENTE & DONNÉES EN DIRECT")
-                        .font(.caption)
-                        .fontWeight(.bold)
-                        .tracking(2)
-                        .foregroundStyle(.secondary)
+            if isPad {
+                // Header: Spacious single-line layout for iPad
+                HStack(alignment: .center) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("PROFIL & TÉLÉMÉTRIE")
+                            .font(.subheadline)
+                            .fontWeight(.bold)
+                            .tracking(2)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 16) {
+                            Picker("Metric", selection: $selectedMetric) {
+                                ForEach(ChartMetric.allCases) { metric in
+                                    Text(metric.rawValue).tag(metric)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .frame(width: 300)
+
+                            Label("Projection", systemImage: "square.fill")
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+
+                    Spacer()
+
+                    // Incline display
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("PENTE")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .foregroundStyle(.secondary)
+                        HStack(alignment: .lastTextBaseline, spacing: 4) {
+                            Text(String(format: "%.1f", engine.currentIncline))
+                                .font(.system(size: 48, weight: .bold, design: .monospaced))
+                                .neonGlow(.neonCyan)
+                            Text("%")
+                                .font(.title3.weight(.bold))
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            } else {
+                // Header: Compact two-line layout for iPhone
+                VStack(spacing: 16) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("PROFIL & TÉLÉMÉTRIE")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .tracking(1.5)
+                            .foregroundStyle(.secondary)
+                        
+                        Spacer()
+                        
+                        VStack(alignment: .trailing, spacing: 0) {
+                            Text("PENTE")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.secondary)
+                            HStack(alignment: .lastTextBaseline, spacing: 2) {
+                                Text(String(format: "%.1f", engine.currentIncline))
+                                    .font(.system(size: 32, weight: .bold, design: .monospaced))
+                                    .neonGlow(.neonCyan)
+                                Text("%")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
 
                     HStack(spacing: 16) {
-                        Label("Pente", systemImage: "square.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(.white.opacity(0.4))
-                        
+                        Label("Projection", systemImage: "square.fill")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.3))
+
                         Picker("Metric", selection: $selectedMetric) {
                             ForEach(ChartMetric.allCases) { metric in
                                 Text(metric.rawValue).tag(metric)
                             }
                         }
                         .pickerStyle(.segmented)
-                        .frame(width: 250)
-                    }
-                }
-
-                Spacer()
-
-                // Current incline display
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("PENTE")
-                        .font(.caption2)
-                        .fontWeight(.bold)
-                        .foregroundStyle(.secondary)
-                    HStack(alignment: .lastTextBaseline, spacing: 2) {
-                        Text(String(format: "%.1f", engine.currentIncline))
-                            .font(.system(size: 36, weight: .bold, design: .monospaced))
-                            .neonGlow(.neonCyan)
-                            .contentTransition(.numericText())
-                        Text("%")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
                     }
                 }
             }
@@ -185,64 +237,75 @@ struct WorkoutView: View {
         .glassPanel()
     }
 
-    // MARK: - Metrics Grid
-
     private var metricsGrid: some View {
         let tel = bleManager.telemetry
+        let columns = isPad 
+            ? [GridItem(.flexible())] 
+            : [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
 
-        return Grid(horizontalSpacing: 12, verticalSpacing: 12) {
-            GridRow {
+        return ScrollView(.vertical, showsIndicators: false) {
+            LazyVGrid(columns: columns, spacing: isPad ? 16 : 12) {
                 MetricCard(
-                    title: "Pulse \(hrSource)",
+                    title: isPad ? "PULSE \(hrSource)" : "Pulse \(hrSource)",
                     value: displayedHR > 0 ? "\(displayedHR)" : "--",
                     unit: "bpm",
                     color: .neonRed,
-                    icon: "heart.fill"
+                    icon: "heart.fill",
+                    isLarge: isPad
                 )
 
                 MetricCard(
-                    title: "Puissance",
+                    title: isPad ? "CHRONOMÈTRE" : "Chrono",
+                    value: engine.formattedElapsed,
+                    unit: (isPad && engine.goalType == .duration) ? "/ \(engine.formattedGoalDuration)" : "",
+                    color: .white,
+                    isLarge: isPad
+                )
+
+                MetricCard(
+                    title: isPad ? "PUISSANCE" : "Puiss.",
                     value: "\(tel.watts)",
                     unit: "W",
-                    color: .neonYellow
+                    color: .neonYellow,
+                    isLarge: isPad
                 )
 
                 MetricCard(
-                    title: "Chronomètre",
-                    value: engine.formattedElapsed,
-                    unit: engine.goalType == .duration ? "/ \(engine.formattedGoalDuration)" : "",
-                    color: .white
-                )
-            }
-
-            GridRow {
-                MetricCard(
-                    title: "Cadence",
+                    title: isPad ? "CADENCE" : "Cadence",
                     value: "\(tel.rpm)",
                     unit: "RPM",
                     color: .neonCyan,
-                    isLarge: false
+                    isLarge: isPad
                 )
 
                 MetricCard(
-                    title: "Vitesse",
+                    title: isPad ? "VITESSE" : "Vitesse",
                     value: String(format: "%.1f", tel.speedKmh),
                     unit: "km/h",
                     color: .neonGreen,
-                    isLarge: false
+                    isLarge: isPad
                 )
 
-                DualMetricCard(
-                    leftTitle: "Distance",
-                    leftValue: String(format: "%.1f", Double(tel.distance) / 100.0),
-                    leftUnit: "km",
-                    rightTitle: "Calories",
-                    rightValue: "\(tel.calories)",
-                    rightUnit: "kcal",
-                    rightColor: .neonOrange
+                MetricCard(
+                    title: isPad ? "DISTANCE" : "Dist.",
+                    value: String(format: "%.2f", Double(tel.distance) / 1000.0),
+                    unit: "km",
+                    color: .neonBlue,
+                    isLarge: isPad
+                )
+
+                MetricCard(
+                    title: isPad ? "ÉNERGIE" : "Énergie",
+                    value: "\(tel.calories)",
+                    unit: "kcal",
+                    color: .neonOrange,
+                    isLarge: isPad
                 )
             }
+            .padding(.horizontal, isPad ? 12 : 8)
+            .padding(.bottom, 20)
         }
+        .scrollClipDisabled()
     }
 
     // MARK: - Footer Controls
@@ -322,13 +385,12 @@ struct WorkoutView: View {
     // MARK: - Resistance Panel (Right Side)
 
     private var resistancePanel: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: isPad ? 12 : 8) {
             Text("CONTRÔLE")
-                .font(.caption)
-                .fontWeight(.bold)
-                .tracking(3)
+                .font(.system(size: isPad ? 12 : 9, weight: .bold))
+                .tracking(2)
                 .foregroundStyle(.secondary)
-                .padding(.top, 16)
+                .padding(.top, isPad ? 16 : 8)
 
             // + Button
             Button {
@@ -337,35 +399,23 @@ struct WorkoutView: View {
                 }
             } label: {
                 Text("+")
-                    .font(.system(size: 56, weight: .light, design: .monospaced))
+                    .font(.system(size: isPad ? 56 : 40, weight: .light, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.9))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glassPanel(cornerRadius: 28)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 28)
-                            .fill(
-                                LinearGradient(
-                                    colors: [Color.white.opacity(0.05), .clear],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    )
+                    .glassPanel(cornerRadius: isPad ? 28 : 20)
             }
             .buttonStyle(HitButtonStyle())
 
             // Override status
-            VStack(spacing: 4) {
-                Text("OVERRIDE")
-                    .font(.caption2)
-                    .fontWeight(.bold)
+            VStack(spacing: 2) {
+                Text("OFFSET")
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.secondary)
                 Text(abs(engine.difficultyMultiplier - engine.difficulty.multiplier) < 0.01 ? "OFF" : String(format: "x%.2f", engine.difficultyMultiplier))
-                    .font(.system(.body, design: .monospaced, weight: .bold))
+                    .font(.system(size: isPad ? 14 : 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(abs(engine.difficultyMultiplier - engine.difficulty.multiplier) < 0.01 ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.neonCyan))
-                    .contentTransition(.numericText())
             }
-            .padding(.vertical, 8)
+            .padding(.vertical, 4)
 
             // - Button
             Button {
@@ -374,31 +424,20 @@ struct WorkoutView: View {
                 }
             } label: {
                 Text("−")
-                    .font(.system(size: 56, weight: .light, design: .monospaced))
+                    .font(.system(size: isPad ? 56 : 40, weight: .light, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.9))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .glassPanel(cornerRadius: 28)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 28)
-                            .fill(
-                                LinearGradient(
-                                    colors: [.clear, Color.white.opacity(0.05)],
-                                    startPoint: .top,
-                                    endPoint: .bottom
-                                )
-                            )
-                    )
+                    .glassPanel(cornerRadius: isPad ? 28 : 20)
             }
             .buttonStyle(HitButtonStyle())
-            .padding(.bottom, 16)
+            .padding(.bottom, 8)
         }
-        .padding(.horizontal, 12)
-        .background(Color.black.opacity(0.3))
-        .overlay(
-            Rectangle()
-                .fill(Color.white.opacity(0.05))
-                .frame(width: 1),
-            alignment: .leading
+        .padding(.horizontal, isPad ? 12 : 8)
+        .padding(.trailing, isPad ? 0 : 44) // ON REPOUSSE LE TEXTE POUR PASSER L'ENCOCHE
+        .frame(maxHeight: .infinity)
+        .background(
+            Color.black.opacity(0.4)
+                .ignoresSafeArea(.all, edges: .all)
         )
     }
 }
@@ -416,6 +455,17 @@ struct HitButtonStyle: ButtonStyle {
 
 // MARK: - Previews
 
+private func createMockBLE() -> BluetoothManager {
+    let ble = BluetoothManager()
+    ble.telemetry.watts = 185
+    ble.telemetry.rpm = 65
+    ble.telemetry.speedKmh = 24.5
+    ble.telemetry.distance = 420
+    ble.telemetry.calories = 115
+    ble.telemetry.heartRate = 142
+    return ble
+}
+
 #Preview("Workout Dashboard") {
     let engine = PatternEngine()
     engine.selectedPattern = .pyramid
@@ -423,7 +473,7 @@ struct HitButtonStyle: ButtonStyle {
     engine.start()
 
     return WorkoutView(
-        bleManager: BluetoothManager(),
+        bleManager: createMockBLE(),
         engine: engine,
         healthManager: HealthManager(),
         onStop: { }
@@ -432,20 +482,18 @@ struct HitButtonStyle: ButtonStyle {
     .preferredColorScheme(.dark)
 }
 
-#Preview("Workout — iPad") {
+#Preview("Workout — iPad", traits: .landscapeLeft) {
     let engine = PatternEngine()
     engine.selectedPattern = .hiit
     engine.goalDurationSeconds = 1800
     engine.start()
 
     return WorkoutView(
-        bleManager: BluetoothManager(),
+        bleManager: createMockBLE(),
         engine: engine,
         healthManager: HealthManager(),
         onStop: { }
     )
     .background(Color.appBackground)
     .preferredColorScheme(.dark)
-    .previewDevice("iPad Pro (13-inch) (M4)")
-    .previewInterfaceOrientation(.landscapeLeft)
 }

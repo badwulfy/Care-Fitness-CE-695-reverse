@@ -130,6 +130,8 @@ struct ContentView: View {
                     .foregroundStyle(Color.neonCyan)
             }
             .font(.title2)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
             .tracking(2)
 
             // Nav tabs (only visible when not in workout)
@@ -245,6 +247,15 @@ struct ContentView: View {
         Task {
             await healthManager.startWorkout()
         }
+        
+        #if os(iOS)
+        // Auto-rotate to landscape ONLY on iPhone. iPad/Mac users manage their own orientation.
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+            }
+        }
+        #endif
 
         withAnimation(.easeInOut(duration: 0.3)) {
             screen = .workout
@@ -261,6 +272,15 @@ struct ContentView: View {
         Task {
             await healthManager.endWorkout()
         }
+        
+        #if os(iOS)
+        // Return to portrait ONLY on iPhone.
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+            }
+        }
+        #endif
 
         // Build session record
         let session = WorkoutSession(
@@ -280,6 +300,17 @@ struct ContentView: View {
         // Save to SwiftData
         modelContext.insert(session)
         lastSession = session
+        
+        // Auto-save to HealthKit (iOS)
+        #if os(iOS)
+        Task {
+            await healthManager.saveWorkoutSummary(
+                duration: Double(session.durationSeconds),
+                calories: Double(session.caloriesTotal),
+                distance: Double(session.distanceTotal) * 100 // hm -> m
+            )
+        }
+        #endif
 
         withAnimation(.easeInOut(duration: 0.3)) {
             screen = .summary
@@ -359,6 +390,8 @@ private struct NavTab: View {
         Button(action: action) {
             Text(title)
                 .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
                 .background(isActive ? Color.neonCyan.opacity(0.2) : Color.clear)
@@ -423,9 +456,14 @@ private struct DeviceBatteryView: View {
     #endif
 }
 
-// MARK: - Preview
+// MARK: - Previews
 
-#Preview {
+#Preview("App — iPhone") {
+    ContentView()
+        .modelContainer(for: WorkoutSession.self, inMemory: true)
+}
+
+#Preview("App — iPad Landscape", traits: .landscapeLeft) {
     ContentView()
         .modelContainer(for: WorkoutSession.self, inMemory: true)
 }

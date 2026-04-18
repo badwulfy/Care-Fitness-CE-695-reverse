@@ -16,20 +16,20 @@ struct SetupView: View {
     @State private var durationMinutes: Int = 10
 
     private let columns = [
-        GridItem(.adaptive(minimum: 160, maximum: 300), spacing: 16)
+        GridItem(.adaptive(minimum: 140, maximum: 300), spacing: 16)
     ]
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
 
-                // MARK: - Header
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Préparation")
                         .font(.largeTitle)
                         .fontWeight(.heavy)
                     Text("Choisis ton programme et configure ta séance.")
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 // MARK: - Pattern Grid
@@ -54,7 +54,7 @@ struct SetupView: View {
                         .font(.headline)
                         .foregroundStyle(.secondary)
                     
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         ForEach(WorkoutDifficulty.allCases, id: \.rawValue) { diff in
                             GoalTypeButton(
                                 title: diff.rawValue,
@@ -67,9 +67,13 @@ struct SetupView: View {
                 }
 
                 // MARK: - Goal Configuration
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Type d'objectif")
+                        .font(.headline)
+                        .foregroundStyle(.secondary)
+
                     // Goal type picker
-                    HStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         ForEach(WorkoutGoalType.allCases, id: \.rawValue) { goal in
                             GoalTypeButton(
                                 title: goal.rawValue,
@@ -79,23 +83,25 @@ struct SetupView: View {
                             }
                         }
                     }
+                }
 
-                    // Duration selector (only for duration goal)
-                    if engine.goalType == .duration {
-                        HStack(spacing: 24) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Durée de l'objectif")
-                                    .font(.headline)
-                                    .foregroundStyle(.secondary)
-                                Text("\(durationMinutes) min")
-                                    .font(.system(size: 40, weight: .bold, design: .monospaced))
-                                    .neonGlow(.neonCyan)
-                            }
+                // Duration selector (only for duration goal)
+                if engine.goalType == .duration {
+                    VStack(alignment: .leading, spacing: 20) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Durée de l'objectif")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text("\(durationMinutes) min")
+                                .font(.system(size: 40, weight: .bold, design: .monospaced))
+                                .neonGlow(.neonCyan)
+                                .lineLimit(1)
+                        }
 
-                            Spacer()
-
-                            // Quick duration buttons
-                            HStack(spacing: 8) {
+                        // Quick duration buttons
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
                                 ForEach([10, 20, 30, 40, 50, 60], id: \.self) { mins in
                                     Button {
                                         withAnimation {
@@ -105,8 +111,8 @@ struct SetupView: View {
                                     } label: {
                                         Text("\(mins)")
                                             .font(.callout.weight(.bold).monospacedDigit())
-                                            .padding(.horizontal, 12)
-                                            .padding(.vertical, 8)
+                                            .padding(.horizontal, 16)
+                                            .padding(.vertical, 10)
                                             .background(
                                                 durationMinutes == mins
                                                     ? Color.neonCyan.opacity(0.2)
@@ -131,10 +137,27 @@ struct SetupView: View {
                                     .buttonStyle(.plain)
                                 }
                             }
+                            .padding(.horizontal, 20) // Space for the symmetrical fade
                         }
-                        .padding(24)
-                        .glassPanel()
+                        .mask {
+                            LinearGradient(
+                                stops: [
+                                    .init(color: .clear, location: 0),
+                                    .init(color: .black, location: 0.08),
+                                    .init(color: .black, location: 0.92),
+                                    .init(color: .clear, location: 1.0)
+                                ],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        }
                     }
+                    .padding(24)
+                    .glassPanel()
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .top)),
+                        removal: .opacity
+                    ))
                 }
 
                 // MARK: - Start Button
@@ -194,6 +217,8 @@ private struct PatternCard: View {
 
             Text(pattern.rawValue)
                 .font(.headline)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
 
             PatternPreviewChart(
                 pattern: pattern,
@@ -232,7 +257,9 @@ private struct GoalTypeButton: View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline.weight(.bold))
-                .padding(.horizontal, 20)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(
                     isSelected
@@ -265,7 +292,7 @@ private struct GoalTypeButton: View {
     .preferredColorScheme(.dark)
 }
 
-#Preview("Setup — iPad Landscape") {
+#Preview("Setup — iPad Landscape", traits: .landscapeLeft) {
     SetupView(
         engine: PatternEngine(),
         bleManager: BluetoothManager(),
@@ -273,6 +300,4 @@ private struct GoalTypeButton: View {
     )
     .background(Color.appBackground)
     .preferredColorScheme(.dark)
-    .previewDevice("iPad Pro (13-inch) (M4)")
-    .previewInterfaceOrientation(.landscapeLeft)
 }

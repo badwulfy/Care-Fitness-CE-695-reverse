@@ -159,9 +159,30 @@ private struct DetailStat: View {
     }
 }
 
-// MARK: - Preview
+// MARK: - Previews
 
-#Preview("Session Detail") {
+#Preview("Detail — iPhone") {
+    NavigationStack {
+        SessionDetailView(
+            session: WorkoutSession(
+                date: .now,
+                patternName: "Pyramide",
+                durationSeconds: 2700,
+                distanceTotal: 128,
+                caloriesTotal: 412,
+                avgHeartRate: 142,
+                maxHeartRate: 178,
+                avgWatts: 185,
+                maxWatts: 310,
+                avgRPM: 65,
+                maxIncline: 12.5
+            )
+        )
+    }
+    .preferredColorScheme(.dark)
+}
+
+#Preview("Detail — iPad Landscape", traits: .landscapeLeft) {
     NavigationStack {
         SessionDetailView(
             session: WorkoutSession(
