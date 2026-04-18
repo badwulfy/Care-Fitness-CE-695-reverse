@@ -397,8 +397,9 @@
 		D060A11E2F92B242000D23ED /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = myappicon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = opencarefitness/opencarefitness.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -407,6 +408,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "OpenCareFitness utilise le Bluetooth pour communiquer avec votre vélo elliptique Care Fitness CE-695.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "OpenCareFitness utilise le Bluetooth pour communiquer avec votre vélo elliptique Care Fitness CE-695.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "OpenCareFitness lit votre fréquence cardiaque depuis l'Apple Watch pour un suivi précis pendant l'exercice.";
@@ -445,8 +447,9 @@
 		D060A11F2F92B242000D23ED /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_APPICON_NAME = myappicon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = opencarefitness/opencarefitness.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -455,6 +458,7 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.sports";
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "OpenCareFitness utilise le Bluetooth pour communiquer avec votre vélo elliptique Care Fitness CE-695.";
 				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "OpenCareFitness utilise le Bluetooth pour communiquer avec votre vélo elliptique Care Fitness CE-695.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "OpenCareFitness lit votre fréquence cardiaque depuis l'Apple Watch pour un suivi précis pendant l'exercice.";

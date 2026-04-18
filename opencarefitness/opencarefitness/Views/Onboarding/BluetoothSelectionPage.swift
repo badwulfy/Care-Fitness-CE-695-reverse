@@ -18,7 +18,38 @@ struct BluetoothSelectionPage: View {
             }
             
             VStack(spacing: 16) {
-                if !ble.isBluetoothPoweredOn {
+                if !ble.hasRequestedAuthorization {
+                    VStack(spacing: 16) {
+                        Text("Autorisation requise")
+                            .font(.headline)
+                        Text("Nous avons besoin du Bluetooth pour communiquer avec votre elliptique.")
+                            .font(.caption)
+                            .multilineTextAlignment(.center)
+                            .foregroundStyle(.secondary)
+                        
+                        Button {
+                            ble.requestAuthorization()
+                            // Petit délai pour laisser le système afficher l'alerte
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                                if ble.isBluetoothPoweredOn {
+                                    ble.startScanning()
+                                }
+                            }
+                        } label: {
+                            Text("Autoriser le Bluetooth")
+                                .font(.headline)
+                                .foregroundStyle(Color.black)
+                                .padding(.horizontal, 24)
+                                .padding(.vertical, 12)
+                                .background(Color.white)
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(RoundedRectangle(cornerRadius: 15))
+                } else if !ble.isBluetoothPoweredOn {
                     VStack(spacing: 12) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .font(.title2)
@@ -98,7 +129,9 @@ struct BluetoothSelectionPage: View {
         .padding(.top, 30)
         .padding(.bottom, 140)
         .onAppear {
-            ble.startScanning()
+            if ble.hasRequestedAuthorization {
+                ble.startScanning()
+            }
         }
     }
 }

@@ -64,7 +64,10 @@ final class BluetoothManager: NSObject {
     var targetResistance: Int = 1
 
     // Private BLE
-    private var centralManager: CBCentralManager!
+    private var centralManager: CBCentralManager?
+    
+    // State to show "Autoriser" button if not yet requested
+    var hasRequestedAuthorization: Bool = false
     private var peripheral: CBPeripheral?
     private var notifyChar: CBCharacteristic?
     private var writeChar: CBCharacteristic?
@@ -75,13 +78,21 @@ final class BluetoothManager: NSObject {
 
     override init() {
         super.init()
-        centralManager = CBCentralManager(delegate: self, queue: .main)
+        // CBCentralManager is now initialized lazily to avoid premature permission dialogs.
     }
 
     // MARK: - Public API
 
+    func requestAuthorization() {
+        if centralManager == nil {
+            centralManager = CBCentralManager(delegate: self, queue: .main)
+            hasRequestedAuthorization = true
+        }
+    }
+
     func startScanning() {
-        guard centralManager.state == .poweredOn else {
+        requestAuthorization()
+        guard let centralManager = centralManager, centralManager.state == .poweredOn else {
             print("[BLE] Scanner ignoré : le Bluetooth n'est pas activé.")
             return
         }
@@ -95,12 +106,12 @@ final class BluetoothManager: NSObject {
     }
 
     func connect(to peripheral: CBPeripheral) {
-        centralManager.stopScan()
+        centralManager?.stopScan()
         self.peripheral = peripheral
         peripheral.delegate = self
         connectionState = .connecting
         print("[BLE] Tentative de connexion à \(peripheral.name ?? "Inconnu")...")
-        centralManager.connect(peripheral, options: nil)
+        centralManager?.connect(peripheral, options: nil)
     }
 
     func disconnect() {
@@ -114,7 +125,7 @@ final class BluetoothManager: NSObject {
             if let c = notifyChar {
                 p.setNotifyValue(false, for: c)
             }
-            centralManager.cancelPeripheralConnection(p)
+            centralManager?.cancelPeripheralConnection(p)
         }
         peripheral = nil
         notifyChar = nil
@@ -209,7 +220,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
         isBluetoothPoweredOn = (central.state == .poweredOn)
         print("[BLE] Etat du gestionnaire Bluetooth (CBCentralManager) : \(central.state.rawValue)")
         if central.state == .poweredOn, connectionState == .disconnected {
-            // Auto-start scanning
+            startScanning()
         }
     }
 
