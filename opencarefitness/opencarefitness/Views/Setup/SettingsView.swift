@@ -73,7 +73,7 @@ struct SettingsView: View {
                         // Apple Watch Test Section
                         settingsSection("Test Apple Watch") {
                             VStack(spacing: 15) {
-                                Text("Vous pouvez tester la synchronisation de la fréquence cardiaque sans démarrer d'entraînement.")
+                                Text("La fréquence cardiaque live remonte depuis l’app Apple Watch compagnon. Autorise Santé sur la montre, puis lance le test depuis l’iPhone.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                 
@@ -90,8 +90,10 @@ struct SettingsView: View {
                                     
                                     Button {
                                         if health.isWorkoutActive {
+                                            print("[Settings] Clic sur 'Arrêter le Test'")
                                             Task { await health.endWorkout() }
                                         } else {
+                                            print("[Settings] Clic sur 'Lancer le Test'")
                                             Task { await health.startWorkout() }
                                         }
                                     } label: {
@@ -102,6 +104,20 @@ struct SettingsView: View {
                                             .foregroundStyle(health.isWorkoutActive ? .red : .blue)
                                             .clipShape(Capsule())
                                     }
+                                }
+
+                                if let message = health.liveHeartRateStatusMessage {
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundStyle(.orange)
+                                        Text(message)
+                                            .font(.caption)
+                                            .foregroundStyle(.orange)
+                                    }
+                                    .padding(12)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(.orange.opacity(0.12))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
                                 }
                             }
                         }

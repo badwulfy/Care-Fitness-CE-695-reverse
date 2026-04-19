@@ -119,7 +119,10 @@ struct OnboardingView: View {
     }
 
     private func syncHealthStatus() {
-        healthAuthorized = health.isAuthorized
+        Task {
+            await health.checkAuthorization()
+            healthAuthorized = health.isAuthorized
+        }
     }
 }
 
