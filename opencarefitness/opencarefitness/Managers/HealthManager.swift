@@ -27,14 +27,14 @@ final class HealthManager: NSObject {
     var isWorkoutActive: Bool = false
     var liveHeartRateStatusMessage: String?
 
+    /// Timestamp of the most recent HR sample received from the Watch. UI uses
+    /// this to detect a stalled Watch stream and offer a reconnect action.
+    var watchHRLastReceived: Date?
+
     private let store = HKHealthStore()
     private var wcSession: WCSession?
-    /// True once a Watch HR sample has arrived in the current session. If true
-    /// we skip the iPhone-side `HKWorkout` save to avoid duplicating the
-    /// Watch's own workout in Apple Health.
-    private var watchProvidedHR: Bool = false
     /// Set when the current session was launched as a test (Settings) — we
-    /// suppress the iPhone summary unconditionally.
+    /// suppress the iPhone summary so tests never leave a trace in Health.
     private var suppressSummary: Bool = false
 
     override init() {
@@ -96,13 +96,11 @@ final class HealthManager: NSObject {
         await checkAuthorization()
         await MainActor.run {
             self.watchHeartRate = 0
-            self.watchProvidedHR = false
+            self.watchHRLastReceived = nil
             self.isWorkoutActive = false
-            // Treat the test session like Watch-provided so saveWorkoutSummary
-            // is suppressed too, even if no HR ever arrives.
             self.suppressSummary = isTest
         }
-        sendToWatch(["cmd": "start", "test": isTest])
+        sendToWatch(["cmd": "start"])
         await MainActor.run {
             if let s = wcSession, s.isReachable {
                 liveHeartRateStatusMessage = "Demande envoyée à la montre…"
@@ -111,6 +109,17 @@ final class HealthManager: NSObject {
                     "Montre non détectée. Ouvre l’app sur ta montre pour activer le suivi cardiaque."
             }
         }
+    }
+
+    /// Re-asks the Watch to start its HR session. Used by the WorkoutView
+    /// reconnect button after the user stopped the Watch session mid-workout.
+    func reconnectWatch() {
+        Task { @MainActor in
+            self.watchHeartRate = 0
+            self.watchHRLastReceived = nil
+            self.liveHeartRateStatusMessage = "Reconnexion de la montre…"
+        }
+        sendToWatch(["cmd": "start"])
     }
 
     func endWorkout() async {
@@ -124,17 +133,18 @@ final class HealthManager: NSObject {
 
     // MARK: - Save Summary
 
-    /// Saves an HKWorkout summary built from bike telemetry. Skipped when the
-    /// Watch already recorded the same session (it owns the canonical workout
-    /// with HR samples). Falls back to summary-only otherwise.
+    /// Saves an HKWorkout summary built from bike telemetry. The iPhone is
+    /// always the canonical workout owner — the Watch discards its session on
+    /// stop, so there's no duplicate to worry about. Skipped only for test
+    /// sessions launched from Settings.
     func saveWorkoutSummary(
         duration: TimeInterval,
         calories: Double,
         distance: Double
     ) async {
         guard isAuthorized else { return }
-        guard !watchProvidedHR, !suppressSummary else {
-            print("[HealthKit] Skipping iPhone summary (watchProvidedHR=\(watchProvidedHR), suppress=\(suppressSummary)).")
+        guard !suppressSummary else {
+            print("[HealthKit] Test session — skipping iPhone summary.")
             return
         }
 
@@ -208,7 +218,7 @@ extension HealthManager: WCSessionDelegate {
         Task { @MainActor in
             if let hr = p["hr"] as? Int, hr > 0 {
                 self.watchHeartRate = hr
-                self.watchProvidedHR = true
+                self.watchHRLastReceived = Date()
                 self.isWorkoutActive = true
                 self.liveHeartRateStatusMessage = nil
             }
@@ -238,13 +248,15 @@ final class HealthManager {
     var isAuthorized: Bool = false
     var isPermissionDenied: Bool = false
     var watchHeartRate: Int = 0
+    var watchHRLastReceived: Date? = nil
     var isWorkoutActive: Bool = false
     var liveHeartRateStatusMessage: String? =
         "HealthKit n'est pas disponible sur cette plateforme."
 
     func requestAuthorization() async { }
-    func startWorkout() async { }
+    func startWorkout(isTest: Bool = false) async { }
     func endWorkout() async { }
+    func reconnectWatch() { }
     func saveWorkoutSummary(duration: TimeInterval, calories: Double, distance: Double) async { }
 }
 

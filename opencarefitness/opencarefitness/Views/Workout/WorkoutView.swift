@@ -133,12 +133,17 @@ struct WorkoutView: View {
             Button("Arrêter", role: .destructive) { onStop() }
             Button("Annuler", role: .cancel) { }
         }
+        .onChange(of: engine.isPaused) { _, paused in
+            // Resume (manual or auto) → reset stale counter so user gets a
+            // fresh 8s window before auto-pause fires again.
+            if !paused { inactiveSeconds = 0 }
+        }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             guard engine.isRunning else { return }
-            
+
             let isStale = Date().timeIntervalSince(ble.telemetry.lastUpdate) > 4.0
             let hasMeaningfulActivity = ble.telemetry.rpm >= 15 || ble.telemetry.watts >= 20 || ble.telemetry.speedKmh >= 2.5
-            
+
             if isStale || !hasMeaningfulActivity {
                 inactiveSeconds += 1
                 activeSeconds = 0
@@ -168,21 +173,33 @@ struct WorkoutView: View {
 
     // MARK: - Status banner
 
+    /// Watch HR stream considered stale when no sample arrived for > 5 s while
+    /// the workout is running. Triggered after at least one sample (so we
+    /// don't badger users who never paired a Watch).
+    private var watchStreamLost: Bool {
+        guard engine.isRunning, let last = health.watchHRLastReceived else { return false }
+        return Date().timeIntervalSince(last) > 5
+    }
+
     /// Message shown at the top of the workout view when something the user
     /// should know is going on (BT reconnecting, telemetry stale, Health
-    /// permission missing). Returns nil → no banner.
-    private var bannerInfo: (text: String, isError: Bool)? {
+    /// permission missing, Watch HR lost). When `action != nil` the banner
+    /// becomes a tappable button.
+    private var bannerInfo: (text: String, isError: Bool, action: (() -> Void)?)? {
         let state = ble.effectiveConnectionState
         switch state {
-        case .scanning:   return ("Recherche du vélo…", false)
-        case .connecting: return ("Connexion au vélo…", false)
-        case .error:      return ("Erreur Bluetooth.",   true)
+        case .scanning:   return ("Recherche du vélo…", false, nil)
+        case .connecting: return ("Connexion au vélo…", false, nil)
+        case .error:      return ("Erreur Bluetooth.",   true,  nil)
         case .connected where !ble.telemetry.isReceiving:
-            return ("Plus de données du vélo. Reprise…", true)
+            return ("Plus de données du vélo. Reprise…", true, nil)
         default: break
         }
         if health.isPermissionDenied {
-            return ("Santé refusé : la séance ne sera pas sauvegardée.", true)
+            return ("Santé refusé : la séance ne sera pas sauvegardée.", true, nil)
+        }
+        if watchStreamLost {
+            return ("Apple Watch déconnectée — toucher pour reconnecter", true, { health.reconnectWatch() })
         }
         return nil
     }
@@ -190,7 +207,7 @@ struct WorkoutView: View {
     @ViewBuilder
     private var connectionBanner: some View {
         if let info = bannerInfo {
-            HStack(spacing: 10) {
+            let content = HStack(spacing: 10) {
                 if !info.isError { ProgressView().tint(.white).scaleEffect(0.7) }
                 Text(info.text)
                     .font(.system(size: 13, weight: .semibold))
@@ -203,6 +220,12 @@ struct WorkoutView: View {
                 info.isError ? Color.neonRed.opacity(0.7) : Color.neonYellow.opacity(0.6),
                 lineWidth: 1))
             .transition(.move(edge: .top).combined(with: .opacity))
+
+            if let action = info.action {
+                Button(action: action) { content }.buttonStyle(.plain)
+            } else {
+                content
+            }
         }
     }
 
@@ -315,6 +338,7 @@ struct WorkoutView: View {
                 Grid(horizontalSpacing: 16, verticalSpacing: 16) {
                     GridRow {
                         MetricCard(title: "PULSE \(hrSource)", value: displayedHR > 0 ? "\(displayedHR)" : "--", unit: "bpm", color: .neonRed, icon: "heart.fill", isLarge: true)
+                            .modifier(WatchReconnectLongPress(action: triggerWatchReconnect))
                         MetricCard(title: "PUISSANCE", value: "\(tel.watts)", unit: "W", color: .neonYellow, isLarge: true)
                         MetricCard(title: "CHRONOMÈTRE", value: engine.formattedElapsed, unit: engine.goalType == .duration ? "/ \(engine.formattedGoalDuration)" : "", color: .white, isLarge: true)
                     }
@@ -337,6 +361,7 @@ struct WorkoutView: View {
 
                     HStack(spacing: hSpacing) {
                         MetricCard(title: "Pulse \(hrSource)", value: displayedHR > 0 ? "\(displayedHR)" : "--", unit: "bpm", color: .neonRed, icon: "heart.fill", isLarge: false)
+                            .modifier(WatchReconnectLongPress(action: triggerWatchReconnect))
                         MetricCard(title: "Chrono", value: engine.formattedElapsed, unit: "", color: .white, isLarge: false)
                     }
                     .frame(height: 85)
@@ -360,5 +385,20 @@ struct WorkoutView: View {
 
     private func resistancePanel(trailingSafeArea: CGFloat) -> some View {
         ResistancePanel(isPad: isPad, safeAreaTrailing: trailingSafeArea)
+    }
+
+    private func triggerWatchReconnect() {
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        health.reconnectWatch()
+    }
+}
+
+/// Long-press on the HR card → ask the Watch to (re)start its HR session.
+/// No-op if Watch is already streaming; useful when the user stopped the
+/// Watch session mid-workout and wants HR back without leaving the screen.
+private struct WatchReconnectLongPress: ViewModifier {
+    let action: () -> Void
+    func body(content: Content) -> some View {
+        content.onLongPressGesture(minimumDuration: 0.5, perform: action)
     }
 }

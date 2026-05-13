@@ -26,10 +26,13 @@ final class PatternEngine {
     var elapsedSeconds: Int = 0
     var currentDistanceHm: Int = 0          // Tracking distance for distance goals
     var difficultyMultiplier: Double = 1.0 // Dynamic coefficient applied on top of pattern
+    /// Re-rolled on each `start()`. Makes the `random` pattern produce a fresh
+    /// sequence per session while staying deterministic within the session.
+    private var sessionSeed: UInt64 = 0
 
     // Computed
     var currentIncline: Double {
-        let base = selectedPattern.incline(at: progress, multiplier: difficultyMultiplier)
+        let base = selectedPattern.incline(at: progress, multiplier: difficultyMultiplier, seed: sessionSeed)
         return min(32.0, max(0.0, base))
     }
 
@@ -93,6 +96,7 @@ final class PatternEngine {
         elapsedSeconds = 0
         currentDistanceHm = 0
         difficultyMultiplier = difficulty.multiplier
+        sessionSeed = UInt64.random(in: .min ... .max)
         isRunning = true
         isPaused = false
         resumeTimer()
@@ -115,6 +119,8 @@ final class PatternEngine {
     }
 
     func incrementIncline() {
+        // For flat (maxBaseIncline == 0) the multiplier has no visible effect.
+        guard selectedPattern.maxBaseIncline > 0 else { return }
         let maxAllowed = 15.0 / selectedPattern.maxBaseIncline
         if difficultyMultiplier < maxAllowed {
             difficultyMultiplier = min(maxAllowed, difficultyMultiplier + 0.1)

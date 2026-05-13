@@ -31,8 +31,6 @@ final class WorkoutManager: NSObject {
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var wcSession: WCSession?
-    /// Test session (iPhone Settings) → discard workout on stop instead of saving.
-    private var isTestSession: Bool = false
 
     private override init() {
         super.init()
@@ -80,14 +78,13 @@ final class WorkoutManager: NSObject {
 
     // MARK: - Workout (iPhone-controlled)
 
-    func startWorkout(isTest: Bool = false) async {
+    func startWorkout() async {
         guard !isWorkoutActive else { return }
         if !isAuthorized { await requestAuthorization() }
         guard store.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized else {
             sendToPhone(["state": "error", "message": "Santé non autorisé sur la montre."])
             return
         }
-        await MainActor.run { self.isTestSession = isTest }
 
         let config = HKWorkoutConfiguration()
         config.activityType = .elliptical
@@ -137,33 +134,25 @@ final class WorkoutManager: NSObject {
         // Synchronous, fast — stops the sensors right away.
         session.stopActivity(with: endDate)
 
-        // Flip UI immediately; Health writes happen below in the background.
-        let testMode = isTestSession
+        // Flip UI immediately; cleanup happens below in the background.
         await MainActor.run {
             self.isWorkoutActive = false
             self.heartRate = 0
-            self.statusMessage = testMode ? "Test terminé." : "Sauvegarde en cours…"
-            self.isTestSession = false
+            self.statusMessage = "Séance terminée."
         }
         sendToPhone(["state": "ended"])
 
-        do {
-            try await builder.endCollection(at: endDate)
-            if testMode {
-                // Don't persist the workout — Settings test isn't a real session.
-                builder.discardWorkout()
-            } else {
-                try await builder.finishWorkout()
-            }
-        } catch {
-            print("[Watch] endWorkout error: \(error.localizedDescription)")
-        }
+        // We never persist the Watch workout — the iPhone owns the canonical
+        // Health entry (with bike telemetry). The Watch session existed only
+        // to activate the HR sensor + grant background runtime.
+        do { try await builder.endCollection(at: endDate) }
+        catch { print("[Watch] endCollection error: \(error.localizedDescription)") }
+        builder.discardWorkout()
         session.end()
 
         await MainActor.run {
             self.session = nil
             self.builder = nil
-            if !testMode { self.statusMessage = "Séance terminée." }
         }
     }
 
@@ -259,11 +248,8 @@ extension WorkoutManager: WCSessionDelegate {
     private func handlePhonePayload(_ p: [String: Any]) {
         guard let cmd = p["cmd"] as? String else { return }
         switch cmd {
-        case "start":
-            let test = (p["test"] as? Bool) ?? false
-            Task { await self.startWorkout(isTest: test) }
-        case "stop":
-            Task { await self.endWorkout() }
+        case "start": Task { await self.startWorkout() }
+        case "stop":  Task { await self.endWorkout() }
         default: break
         }
     }

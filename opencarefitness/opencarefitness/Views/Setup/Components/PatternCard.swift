@@ -39,6 +39,9 @@ struct PatternCard: View {
                 difficulty: difficulty
             )
             .frame(height: 48)
+            // Swift Charts mis-animates BarMark foregroundStyle transitions
+            // (cyan ↔ white) under our parent .spring animation — opt out.
+            .transaction { $0.animation = nil }
 
             Text(pattern.description)
                 .font(.system(size: 11))

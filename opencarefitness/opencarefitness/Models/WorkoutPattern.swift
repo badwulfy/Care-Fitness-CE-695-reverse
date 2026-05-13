@@ -2,8 +2,12 @@
 //  WorkoutPattern.swift
 //  opencarefitness
 //
-//  Predefined workout intensity patterns (9 types).
-//  Each pattern returns an incline (0–15%) for a given progress (0.0–1.0).
+//  Predefined workout intensity patterns. Each pattern returns an incline
+//  (0–15%) for a given progress (0.0–1.0) and a difficulty multiplier.
+//
+//  All patterns peak at <= 11.5% base incline so that even at the highest
+//  difficulty multiplier (1.3 / Extreme) the shape isn't clipped by the
+//  hardware ceiling of 15%.
 //
 
 import Foundation
@@ -35,10 +39,10 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
     case progression  = "Progression"
     case vShape       = "Vallon"
     case pyramid      = "Pyramide"
-    case hiit         = "HIIT"
-    case fatBurn      = "Combustion"
+    case hiit         = "Intervalles"
+    case fatBurn      = "Endurance"
     case rollingHills = "Collines"
-    case random       = "Aléatoire"
+    case random       = "Variable"
 
     var id: String { rawValue }
 
@@ -46,7 +50,7 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
         switch self {
         case .flat:         return "equal"
         case .progression:  return "arrow.up.right"
-        case .vShape:       return "chevron.down"
+        case .vShape:       return "arrow.uturn.up"
         case .pyramid:      return "triangle"
         case .hiit:         return "bolt.fill"
         case .fatBurn:      return "flame.fill"
@@ -57,99 +61,117 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
 
     var description: String {
         switch self {
-        case .flat:         return "Intensité constante à 0%."
+        case .flat:         return "Sans inclinaison. Idéal pour récupération ou échauffement."
         case .progression:  return "Montée progressive du début à la fin."
-        case .vShape:       return "Descente puis remontée brutale en fin de séance."
+        case .vShape:       return "Descente symétrique jusqu'au creux, puis remontée."
         case .pyramid:      return "Montée jusqu'au milieu, puis descente symétrique."
-        case .hiit:         return "Alternance de blocs intenses et de repos."
-        case .fatBurn:      return "Montée rapide, haut plateau prolongé en zone aérobie."
-        case .rollingHills: return "Vagues fluides alternant ascensions et descentes."
-        case .random:       return "Pente aléatoire sur des cycles aléatoires."
+        case .hiit:         return "Alternance de blocs intenses et de blocs de récupération."
+        case .fatBurn:      return "Échauffement, plateau aérobie, bloc tempo central, retour, cooldown."
+        case .rollingHills: return "Petites collines successives qui s'enchaînent."
+        case .random:       return "Pente variable, nouvelle séquence à chaque séance."
         }
     }
 
-    /// Returns incline percentage (0–15%) for a given progress (0.0–1.0) and difficulty.
+    // MARK: - Incline
+
+    /// Returns incline percentage (0–15%) for a given progress and difficulty.
     func incline(at progress: Double, difficulty: WorkoutDifficulty = .hard) -> Double {
         incline(at: progress, multiplier: difficulty.multiplier)
     }
 
-    func incline(at progress: Double, multiplier: Double) -> Double {
+    /// `seed` is used by the `random` pattern to produce a different sequence
+    /// per session. Other patterns ignore it.
+    func incline(at progress: Double, multiplier: Double, seed: UInt64 = 0) -> Double {
         let t = max(0.0, min(1.0, progress))
         var base: Double = 0.0
 
         switch self {
         case .flat:
-            base = 4.0
+            base = 0.0
 
         case .progression:
-            base = t * 15.0
+            base = t * 11.5
 
         case .vShape:
-            // Soft V-Shape: Descent, plateau, then steady ascent
-            if t < 0.4 {
-                base = 8.0 * (1.0 - t / 0.4)
-            } else if t < 0.6 {
-                base = 0.0
+            // Symmetric inverse of pyramid: descend to floor, then climb back.
+            if t < 0.5 {
+                base = 11.5 * (1.0 - t * 2.0)
             } else {
-                base = 12.0 * ((t - 0.6) / 0.4)
+                base = 11.5 * ((t - 0.5) * 2.0)
             }
 
         case .pyramid:
             if t < 0.5 {
-                base = 12.0 * (t * 2.0)
+                base = 11.5 * (t * 2.0)
             } else {
-                base = 12.0 * (1.0 - (t - 0.5) * 2.0)
+                base = 11.5 * (1.0 - (t - 0.5) * 2.0)
             }
 
         case .hiit:
+            // Real HIIT proportions: short sprint (~25% of cycle) + long recovery.
             let cycle = (t * 8.0).truncatingRemainder(dividingBy: 1.0)
-            base = cycle < 0.5 ? 12.0 : 2.0
+            base = cycle < 0.25 ? 11.5 : 1.0
 
         case .fatBurn:
-            if t < 0.1 {
-                base = (t / 0.1) * 8.0
-            } else if t < 0.9 {
-                base = 8.0
-            } else {
-                base = 8.0 * (1.0 - (t - 0.9) / 0.1)
+            // Stepped tempo: warmup → zone 2 → tempo block (middle) → zone 2 → cooldown.
+            switch t {
+            case ..<0.10: base = (t / 0.10) * 5.0                // ramp 0 → 5
+            case ..<0.35: base = 5.0                             // zone 2
+            case ..<0.40: base = 5.0 + ((t - 0.35) / 0.05) * 3.0 // ramp 5 → 8
+            case ..<0.60: base = 8.0                             // tempo block
+            case ..<0.65: base = 8.0 - ((t - 0.60) / 0.05) * 3.0 // ramp 8 → 5
+            case ..<0.90: base = 5.0                             // zone 2 again
+            default:      base = 5.0 * (1.0 - (t - 0.90) / 0.10) // cooldown 5 → 0
             }
 
-
         case .rollingHills:
-            base = 6.0 + 6.0 * sin(t * .pi * 4.0 - .pi / 2.0)
+            // 5 hills, moderate amplitude (3 → 8%) so it stays a rolling ride —
+            // never punitive, never flat, distinct from HIIT spikes.
+            base = 5.5 + 2.5 * sin(t * .pi * 10.0 - .pi / 2.0)
 
         case .random:
-            let slot = Int(t * 16.0) % 16
-            let precomputed: [Double] = [3, 11, 5, 12, 2, 9, 7, 10, 1, 12, 6, 8, 4, 11, 8, 0]
-            base = precomputed[slot]
+            let slot = min(15, Int(t * 16.0))
+            base = Self.randomValue(slot: slot, seed: seed)
         }
-        
+
         return min(15.0, base * multiplier)
     }
 
-    /// Generate sample preview data for the setup cards using an enum.
+    /// Deterministic per-(seed, slot) value in [0, 11.5]. SplitMix-style hash
+    /// so a session seed produces a unique-looking sequence without state.
+    private static func randomValue(slot: Int, seed: UInt64) -> Double {
+        var x = (UInt64(bitPattern: Int64(slot)) &+ 1) &* 0x9E3779B97F4A7C15 &+ seed
+        x = (x ^ (x >> 30)) &* 0xBF58476D1CE4E5B9
+        x = (x ^ (x >> 27)) &* 0x94D049BB133111EB
+        x ^= x >> 31
+        return Double(x % 12)   // 0…11
+    }
+
+    // MARK: - Preview / chart axis
+
+    /// Sample preview for setup cards. Uses a fixed seed for visual stability.
     func previewSamples(count: Int = 10, difficulty: WorkoutDifficulty = .medium) -> [Double] {
         previewSamples(count: count, multiplier: difficulty.multiplier)
     }
 
-    /// Generate sample preview data using a raw multiplier.
     func previewSamples(count: Int = 10, multiplier: Double) -> [Double] {
         (0..<count).map { i in
-            incline(at: Double(i) / Double(count), multiplier: multiplier)
+            incline(at: Double(i) / Double(count), multiplier: multiplier, seed: 42)
         }
     }
 
-    /// The maximum base incline (before multiplier) for this pattern.
+    /// Maximum base incline (pre-multiplier) — used by PatternEngine to cap
+    /// manual increments and by chart code to size the y-axis.
     var maxBaseIncline: Double {
         switch self {
-        case .flat: return 4.0
-        case .progression: return 15.0
-        case .vShape: return 12.0
-        case .pyramid: return 12.0
-        case .hiit: return 12.0
-        case .fatBurn: return 8.0
-        case .rollingHills: return 12.0
-        case .random: return 12.0
+        case .flat:         return 0.0
+        case .progression:  return 11.5
+        case .vShape:       return 11.5
+        case .pyramid:      return 11.5
+        case .hiit:         return 11.5
+        case .fatBurn:      return 8.0
+        case .rollingHills: return 8.0
+        case .random:       return 11.5
         }
     }
 }
