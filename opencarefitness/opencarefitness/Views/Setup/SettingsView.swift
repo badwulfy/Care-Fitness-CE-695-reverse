@@ -19,24 +19,42 @@ struct SettingsView: View {
                         // Device Section
                         settingsSection("Appareil Bluetooth") {
                             VStack(spacing: 12) {
-                                if let peripheral = (ble.effectiveConnectionState == .connected ? "Connecté" : "Non connecté") {
-                                    HStack {
-                                        Image(systemName: "cpu")
-                                            .foregroundStyle(Color.neonCyan)
+                                HStack {
+                                    Image(systemName: "cpu")
+                                        .foregroundStyle(Color.neonCyan)
+                                    VStack(alignment: .leading, spacing: 2) {
                                         Text(ble.effectiveConnectionState.rawValue)
                                             .font(.headline)
-                                        Spacer()
-                                        if ble.effectiveConnectionState == .connected {
-                                            Button("Déconnecter") {
-                                                ble.disconnect()
-                                            }
-                                            .font(.caption)
-                                            .foregroundStyle(.red)
+                                        if let deviceName = ble.connectedPeripheralName ?? ble.preferredPeripheralName {
+                                            Text(deviceName)
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
                                         }
+                                    }
+                                    Spacer()
+                                    if ble.effectiveConnectionState == .connected {
+                                        Button("Déconnecter") {
+                                            ble.disconnect()
+                                        }
+                                        .font(.caption)
+                                        .foregroundStyle(.red)
                                     }
                                 }
                                 
                                 Divider().background(.white.opacity(0.1))
+
+                                if ble.preferredPeripheralIdentifier != nil {
+                                    HStack {
+                                        Label("Appareil mémorisé", systemImage: "memorychip")
+                                            .foregroundStyle(.secondary)
+                                        Spacer()
+                                        Button("Oublier") {
+                                            ble.clearPreferredPeripheral()
+                                        }
+                                        .font(.caption)
+                                        .foregroundStyle(.orange)
+                                    }
+                                }
                                 
                                 Button {
                                     ble.startScanning()
@@ -49,13 +67,23 @@ struct SettingsView: View {
                                 
                                 if !ble.discoveredPeripherals.isEmpty {
                                     ForEach(ble.discoveredPeripherals, id: \.identifier) { p in
+                                        let isPreferred = ble.preferredPeripheralIdentifier == p.identifier
+                                        let isConnected = ble.connectedPeripheralIdentifier == p.identifier
+
                                         Button {
                                             ble.connect(to: p)
                                         } label: {
                                             HStack {
-                                                Text(p.name ?? "Inconnu")
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(p.name ?? "Inconnu")
+                                                    if isPreferred && !isConnected {
+                                                        Text("Appareil mémorisé")
+                                                            .font(.caption2)
+                                                            .foregroundStyle(.secondary)
+                                                    }
+                                                }
                                                 Spacer()
-                                                if ble.effectiveConnectionState == .connected {
+                                                if isConnected {
                                                     Image(systemName: "checkmark.circle.fill")
                                                         .foregroundStyle(.green)
                                                 }
@@ -94,7 +122,7 @@ struct SettingsView: View {
                                             Task { await health.endWorkout() }
                                         } else {
                                             print("[Settings] Clic sur 'Lancer le Test'")
-                                            Task { await health.startWorkout() }
+                                            Task { await health.startWorkout(isTest: true) }
                                         }
                                     } label: {
                                         Text(health.isWorkoutActive ? "Arrêter le Test" : "Lancer le Test")
@@ -106,7 +134,41 @@ struct SettingsView: View {
                                     }
                                 }
 
-                                if let message = health.liveHeartRateStatusMessage {
+                                if health.isPermissionDenied {
+                                    VStack(spacing: 10) {
+                                        HStack(alignment: .top, spacing: 8) {
+                                            Image(systemName: "exclamationmark.octagon.fill")
+                                                .foregroundStyle(.red)
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text("Accès Santé incomplet")
+                                                    .font(.subheadline).bold()
+                                                Text("L'application n'a pas l'autorisation d'enregistrer tes entraînements. Vérifie tes réglages Santé.")
+                                                    .font(.caption)
+                                                    .foregroundStyle(.secondary)
+                                            }
+                                        }
+                                        
+                                        Button {
+                                            if let url = URL(string: UIApplication.openSettingsURLString) {
+                                                UIApplication.shared.open(url)
+                                            }
+                                        } label: {
+                                            Text("Ouvrir les Réglages")
+                                                .font(.caption).bold()
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 8)
+                                                .background(Color.red.opacity(0.2))
+                                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                                        }
+                                        .buttonStyle(.plain)
+                                        .foregroundStyle(.red)
+                                    }
+                                    .padding(12)
+                                    .background(Color.red.opacity(0.1))
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                                }
+
+                                if let message = health.liveHeartRateStatusMessage, !health.isPermissionDenied {
                                     HStack(alignment: .top, spacing: 8) {
                                         Image(systemName: "exclamationmark.triangle.fill")
                                             .foregroundStyle(.orange)

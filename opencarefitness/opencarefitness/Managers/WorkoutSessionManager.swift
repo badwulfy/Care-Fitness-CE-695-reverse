@@ -96,10 +96,12 @@ final class WorkoutSessionManager {
         context.insert(session)
         lastSession = session
         clearSnapshot()
-        
+
         #if os(iOS)
-        Task {
-            await healthManager.finalizeLocalWorkout(
+        // Persist an iPhone-side HKWorkout summary (bike data). Skipped inside
+        // HealthManager when the Watch already saved its own workout.
+        Task { [healthManager, session] in
+            await healthManager.saveWorkoutSummary(
                 duration: Double(session.durationSeconds),
                 calories: Double(session.caloriesTotal),
                 distance: Double(session.distanceTotal) * 100
@@ -123,19 +125,6 @@ final class WorkoutSessionManager {
             rpmSamples.append(rpm)
         }
         maxIncline = max(maxIncline, incline)
-
-        // Stream HR/power to HealthKit so the workout has granular samples,
-        // not just an end-of-session summary.
-        #if os(iOS)
-        Task { [healthManager, bleManager] in
-            await healthManager.recordSample(
-                heartRate: hr,
-                distanceMeters: Double(bleManager.telemetry.distance) * 100,
-                calories: Double(bleManager.telemetry.calories),
-                watts: watts
-            )
-        }
-        #endif
 
         writeSnapshot(force: false)
     }

@@ -2,20 +2,25 @@
 //  HealthManager.swift
 //  opencarefitness
 //
-//  Manages HealthKit integration:
-//  - iPhone authorization and workout summary saving
-//  - launching the companion watchOS workout
-//  - receiving mirrored Apple Watch heart-rate data
+//  - iPhone HealthKit authorization + workout summary persistence
+//  - Live heart-rate stream from the paired Apple Watch via WatchConnectivity
+//
+//  Why WatchConnectivity (not HKWorkoutSession mirroring): the Watch records
+//  its own elliptical workout in Health (with full HR samples). We only need
+//  the live HR value here for display. WC is decoupled, debuggable, and avoids
+//  duplicating workouts across devices.
 //
 
 import Foundation
 
 #if canImport(HealthKit) && os(iOS)
 import HealthKit
+import WatchConnectivity
 
 @Observable
 final class HealthManager: NSObject {
 
+    // Public state consumed by the UI
     var isAuthorized: Bool = false
     var isPermissionDenied: Bool = false
     var watchHeartRate: Int = 0
@@ -23,57 +28,35 @@ final class HealthManager: NSObject {
     var liveHeartRateStatusMessage: String?
 
     private let store = HKHealthStore()
-    private var mirroredSession: HKWorkoutSession?
-
-    // iPhone-side workout builder: collects granular samples (HR from bike BLE,
-    // distance, calories) during the session and persists them on stop.
-    private var localBuilder: HKWorkoutBuilder?
-    private var localBuilderStart: Date?
+    private var wcSession: WCSession?
+    /// True once a Watch HR sample has arrived in the current session. If true
+    /// we skip the iPhone-side `HKWorkout` save to avoid duplicating the
+    /// Watch's own workout in Apple Health.
+    private var watchProvidedHR: Bool = false
+    /// Set when the current session was launched as a test (Settings) — we
+    /// suppress the iPhone summary unconditionally.
+    private var suppressSummary: Bool = false
 
     override init() {
         super.init()
-        liveHeartRateStatusMessage = "Prêt à démarrer le workout sur l’Apple Watch."
-        configureMirroringHandler()
-        Task { 
-            await checkAuthorization() 
-            await recoverActiveWorkoutSession() // Tente de récupérer une session déjà en cours
-        }
+        liveHeartRateStatusMessage = "Ouvre l’app sur ta montre pour mesurer ton rythme cardiaque."
+        Task { await checkAuthorization() }
+        activateWatchConnectivity()
     }
 
     // MARK: - Authorization
 
     func checkAuthorization() async {
-        guard HKHealthStore.isHealthDataAvailable() else {
-            print("[HealthKit] ❌ Données de santé non disponibles sur cet appareil.")
-            return
-        }
+        guard HKHealthStore.isHealthDataAvailable() else { return }
 
-        let hrType = HKObjectType.quantityType(forIdentifier: .heartRate)!
-        let workoutType = HKObjectType.workoutType()
-
-        let hrStatus = store.authorizationStatus(for: hrType)
-        let workoutStatus = store.authorizationStatus(for: workoutType)
-
-        print("[HealthKit] 🔍 Diagnostic des permissions :")
-        print("   - Statut Rythme Cardiaque : \(hrStatus.rawValue)")
-        print("   - Statut Entraînements : \(workoutStatus.rawValue)")
-
+        let workoutStatus = store.authorizationStatus(for: HKObjectType.workoutType())
         await MainActor.run {
-            // Pour l'iPhone, on a surtout besoin de pouvoir "Partager" (écrire) l'Entraînement pour enregistrer le résumé.
-            self.isAuthorized = (workoutStatus == .sharingAuthorized)
-            
-            // Pour le rythme cardiaque, l'iPhone ne fait que LIRE. 
-            // 'sharingDenied' (1) signifie qu'on ne peut pas ÉCRIRE, ce qui n'est pas bloquant pour le mirroring.
-            // On ne considère donc comme "Erreur Critique" que si l'accès aux Entraînements est refusé.
+            self.isAuthorized      = (workoutStatus == .sharingAuthorized)
             self.isPermissionDenied = (workoutStatus == .sharingDenied)
-            
             if self.isPermissionDenied {
-                self.liveHeartRateStatusMessage = "Accès Entraînements Santé refusé. Active l'accès dans les Réglages iPhone."
-            } else if hrStatus == .sharingDenied {
-                print("[HealthKit] Note: Accès ÉCRITURE rythme cardiaque refusé, mais la LECTURE est peut-être possible via Mirroring.")
+                self.liveHeartRateStatusMessage =
+                    "Accès Entraînements Santé refusé. Active l’accès dans Réglages."
             }
-            
-            print("   - Statut Final : Authorized=\(self.isAuthorized), PermissionDenied=\(self.isPermissionDenied)")
         }
     }
 
@@ -86,7 +69,6 @@ final class HealthManager: NSObject {
             HKObjectType.quantityType(forIdentifier: .distanceCycling)!,
             HKObjectType.workoutType()
         ]
-
         let writeTypes: Set<HKSampleType> = [
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
             HKObjectType.quantityType(forIdentifier: .distanceCycling)!,
@@ -95,183 +77,69 @@ final class HealthManager: NSObject {
 
         do {
             try await store.requestAuthorization(toShare: writeTypes, read: readTypes)
-            await checkAuthorization()
         } catch {
             print("[HealthKit] Authorization failed: \(error)")
-            await MainActor.run {
-                self.liveHeartRateStatusMessage = "Autorisation Santé refusée: \(error.localizedDescription)"
-            }
-            await checkAuthorization()
         }
+        await checkAuthorization()
     }
 
-    // MARK: - Mirrored Workout
+    // MARK: - Workout lifecycle (iPhone-driven)
 
-    func startWorkout() async {
-        print("[HealthKit] ⌚️ Demande de démarrage du workout sur Apple Watch...")
+    /// Tells the Watch companion to start an HKWorkoutSession. Safe to call
+    /// even if the Watch isn’t reachable — UI shows a hint, BLE HR keeps
+    /// working as fallback.
+    ///
+    /// `isTest == true` (Settings → "Lancer le Test") starts the session for
+    /// HR display only: the Watch will discard its workout on stop instead of
+    /// persisting it, and the iPhone won't save its summary either.
+    func startWorkout(isTest: Bool = false) async {
         await checkAuthorization()
-
-        if !isAuthorized {
-            await requestAuthorization()
-            await checkAuthorization()
+        await MainActor.run {
+            self.watchHeartRate = 0
+            self.watchProvidedHR = false
+            self.isWorkoutActive = false
+            // Treat the test session like Watch-provided so saveWorkoutSummary
+            // is suppressed too, even if no HR ever arrives.
+            self.suppressSummary = isTest
         }
-
-        guard isAuthorized else {
-            await MainActor.run {
-                liveHeartRateStatusMessage = "Autorise Santé sur l’iPhone avant de lancer la montre."
-            }
-            return
-        }
-
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .elliptical
-        configuration.locationType = .indoor
-
-        // Local builder so we save granular samples even if the Apple Watch
-        // companion never starts (or crashes mid-workout).
-        let builder = HKWorkoutBuilder(healthStore: store, configuration: configuration, device: .local())
-        let start = Date()
-        do {
-            try await builder.beginCollection(at: start)
-            await MainActor.run {
-                self.localBuilder = builder
-                self.localBuilderStart = start
-            }
-        } catch {
-            print("[HealthKit] beginCollection failed: \(error)")
-        }
-
-        do {
-            try await store.startWatchApp(toHandle: configuration)
-            await MainActor.run {
-                self.watchHeartRate = 0
-                self.liveHeartRateStatusMessage = "Signal d’éveil envoyé à l’Apple Watch..."
-            }
-        } catch {
-            print("[HealthKit] Failed to start watch app: \(error)")
-            await MainActor.run {
-                self.isWorkoutActive = false
-                self.liveHeartRateStatusMessage = "Impossible de lancer l’Apple Watch: \(error.localizedDescription)"
+        sendToWatch(["cmd": "start", "test": isTest])
+        await MainActor.run {
+            if let s = wcSession, s.isReachable {
+                liveHeartRateStatusMessage = "Demande envoyée à la montre…"
+            } else {
+                liveHeartRateStatusMessage =
+                    "Montre non détectée. Ouvre l’app sur ta montre pour activer le suivi cardiaque."
             }
         }
     }
 
     func endWorkout() async {
-        print("[HealthKit] ⌚️ Fin du workout miroir côté iPhone...")
-
-        if let mirroredSession {
-            mirroredSession.end()
-        }
-
+        sendToWatch(["cmd": "stop"])
         await MainActor.run {
-            self.mirroredSession = nil
             self.isWorkoutActive = false
             self.watchHeartRate = 0
-            self.liveHeartRateStatusMessage = "Workout arrêté."
-        }
-    }
-
-    // MARK: - Live samples (bike BLE → HealthKit)
-
-    /// Append one HR sample to the local builder. No-op if HealthKit is denied
-    /// or the builder failed to start. Power isn't meaningful for `.elliptical`
-    /// in Health so we don't record it here.
-    func recordSample(heartRate: Int, distanceMeters: Double, calories: Double, watts: Int) async {
-        guard let builder = localBuilder, heartRate > 0 else { return }
-        let now = Date()
-        let hrType = HKQuantityType(.heartRate)
-        let quantity = HKQuantity(unit: .count().unitDivided(by: .minute()), doubleValue: Double(heartRate))
-        let sample = HKQuantitySample(type: hrType, quantity: quantity, start: now, end: now)
-        do { try await builder.addSamples([sample]) }
-        catch { print("[HealthKit] addSamples failed: \(error)") }
-    }
-
-    /// Finalize the iPhone-side workout: stamps totals, closes the builder.
-    /// Falls back to the legacy `saveWorkoutSummary` path if the builder never
-    /// started (e.g. permission denied at session start).
-    func finalizeLocalWorkout(duration: TimeInterval, calories: Double, distance: Double) async {
-        guard let builder = localBuilder, let start = localBuilderStart else {
-            await saveWorkoutSummary(duration: duration, calories: calories, distance: distance)
-            return
-        }
-        let end = start.addingTimeInterval(duration)
-
-        var totalSamples: [HKQuantitySample] = []
-        if calories > 0,
-           let kcalType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
-            totalSamples.append(HKQuantitySample(
-                type: kcalType,
-                quantity: HKQuantity(unit: .kilocalorie(), doubleValue: calories),
-                start: start, end: end))
-        }
-        if distance > 0,
-           let distType = HKQuantityType.quantityType(forIdentifier: .distanceCycling) {
-            totalSamples.append(HKQuantitySample(
-                type: distType,
-                quantity: HKQuantity(unit: .meter(), doubleValue: distance),
-                start: start, end: end))
-        }
-
-        do {
-            if !totalSamples.isEmpty { try await builder.addSamples(totalSamples) }
-            try await builder.endCollection(at: end)
-            _ = try await builder.finishWorkout()
-        } catch {
-            print("[HealthKit] finishWorkout failed: \(error)")
-        }
-
-        await MainActor.run {
-            self.localBuilder = nil
-            self.localBuilderStart = nil
-        }
-    }
-
-    private func configureMirroringHandler() {
-        print("[HealthKit] 🔧 Enregistrement du workoutSessionMirroringStartHandler...")
-        store.workoutSessionMirroringStartHandler = { [weak self] session in
-            guard let self else { return }
-            print("[HealthKit] 📲 Session miroir automatique reçue depuis l’Apple Watch.")
-
-            self.attachToSession(session)
-        }
-    }
-
-    private func recoverActiveWorkoutSession() async {
-        print("[HealthKit] 🔍 Tentative de récupération d'une session active...")
-        do {
-            if let activeSession = try await store.recoverActiveWorkoutSession() {
-                print("[HealthKit] 📲 Session active récupérée !")
-                attachToSession(activeSession)
-            }
-        } catch {
-            print("[HealthKit] ❌ Erreur récupération session active: \(error.localizedDescription)")
-        }
-    }
-
-    private func attachToSession(_ session: HKWorkoutSession) {
-        session.delegate = self
-        let builder = session.associatedWorkoutBuilder()
-        builder.delegate = self
-        
-        Task { @MainActor in
-            self.mirroredSession = session
-            self.isWorkoutActive = (session.state == .running)
-            self.liveHeartRateStatusMessage = "Session miroir connectée."
-            print("[HealthKit] ✅ Delegate attaché à la session et au builder.")
+            self.liveHeartRateStatusMessage = "Séance arrêtée."
         }
     }
 
     // MARK: - Save Summary
 
+    /// Saves an HKWorkout summary built from bike telemetry. Skipped when the
+    /// Watch already recorded the same session (it owns the canonical workout
+    /// with HR samples). Falls back to summary-only otherwise.
     func saveWorkoutSummary(
         duration: TimeInterval,
         calories: Double,
         distance: Double
     ) async {
         guard isAuthorized else { return }
+        guard !watchProvidedHR, !suppressSummary else {
+            print("[HealthKit] Skipping iPhone summary (watchProvidedHR=\(watchProvidedHR), suppress=\(suppressSummary)).")
+            return
+        }
 
-        let start = Date().addingTimeInterval(-duration)
         let end = Date()
+        let start = end.addingTimeInterval(-duration)
 
         let workout = HKWorkout(
             activityType: .elliptical,
@@ -283,65 +151,84 @@ final class HealthManager: NSObject {
             device: nil,
             metadata: ["Source": "OpenCareFitness"]
         )
+        do { try await store.save(workout) }
+        catch { print("[HealthKit] Failed to save workout: \(error)") }
+    }
 
-        do {
-            try await store.save(workout)
-        } catch {
-            print("[HealthKit] Failed to save workout: \(error)")
+    // MARK: - WatchConnectivity
+
+    private func activateWatchConnectivity() {
+        guard WCSession.isSupported() else { return }
+        let s = WCSession.default
+        s.delegate = self
+        s.activate()
+        wcSession = s
+    }
+
+    private func sendToWatch(_ payload: [String: Any]) {
+        guard let s = wcSession, s.activationState == .activated else { return }
+        if s.isReachable {
+            s.sendMessage(payload, replyHandler: nil) { err in
+                print("[WC] sendMessage failed: \(err.localizedDescription)")
+            }
+        } else {
+            // Queue for later delivery; Watch will pick it up on next foreground.
+            s.transferUserInfo(payload)
         }
     }
 }
 
-extension HealthManager: HKWorkoutSessionDelegate {
-    func workoutSession(_ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState, from fromState: HKWorkoutSessionState, date: Date) {
-        print("[HealthKit] 🔄 Session miroir : \(fromState.rawValue) -> \(toState.rawValue)")
+extension HealthManager: WCSessionDelegate {
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        print("[WC] activation=\(activationState.rawValue) err=\(error?.localizedDescription ?? "-") paired=\(session.isPaired) installed=\(session.isWatchAppInstalled)")
+    }
+    func sessionDidBecomeInactive(_ session: WCSession) {}
+    func sessionDidDeactivate(_ session: WCSession) {
+        // Re-activate to support multi-watch pairing changes.
+        WCSession.default.activate()
+    }
 
+    func sessionReachabilityDidChange(_ session: WCSession) {
+        // No UI alert: HR keeps streaming via applicationContext when the
+        // Watch backgrounds (screen off), so dropping reachability is normal.
+    }
+
+    /// HR samples and state updates arriving from the Watch.
+    func session(_ session: WCSession, didReceiveMessage message: [String : Any]) {
+        handleWatchPayload(message)
+    }
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
+        handleWatchPayload(userInfo)
+    }
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String : Any]) {
+        handleWatchPayload(applicationContext)
+    }
+
+    private func handleWatchPayload(_ p: [String: Any]) {
         Task { @MainActor in
-            self.isWorkoutActive = (toState == .running)
-            if toState == .ended || toState == .stopped {
-                self.watchHeartRate = 0
-                self.liveHeartRateStatusMessage = "Session miroir terminée."
+            if let hr = p["hr"] as? Int, hr > 0 {
+                self.watchHeartRate = hr
+                self.watchProvidedHR = true
+                self.isWorkoutActive = true
+                self.liveHeartRateStatusMessage = nil
+            }
+            if let state = p["state"] as? String {
+                switch state {
+                case "started":
+                    self.isWorkoutActive = true
+                    self.liveHeartRateStatusMessage = "Mesure cardiaque active sur la montre."
+                case "ended":
+                    self.isWorkoutActive = false
+                    self.watchHeartRate = 0
+                case "error":
+                    let msg = (p["message"] as? String) ?? "Erreur côté montre."
+                    self.liveHeartRateStatusMessage = msg
+                    self.isWorkoutActive = false
+                default: break
+                }
             }
         }
     }
-
-    func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
-        Task { @MainActor in
-            self.isWorkoutActive = false
-            self.liveHeartRateStatusMessage = "Session miroir en erreur: \(error.localizedDescription)"
-        }
-    }
-
-    func workoutSession(_ workoutSession: HKWorkoutSession, didDisconnectFromRemoteDeviceWithError error: (any Error)?) {
-        Task { @MainActor in
-            self.mirroredSession = nil
-            self.isWorkoutActive = false
-            self.watchHeartRate = 0
-            self.liveHeartRateStatusMessage = error.map {
-                "Apple Watch déconnectée: \($0.localizedDescription)"
-            } ?? "Apple Watch déconnectée."
-        }
-    }
-
-}
-
-extension HealthManager: HKLiveWorkoutBuilderDelegate {
-    func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
-        guard collectedTypes.contains(HKQuantityType(.heartRate)),
-              let statistics = workoutBuilder.statistics(for: HKQuantityType(.heartRate)),
-              let quantity = statistics.mostRecentQuantity() else {
-            return
-        }
-        
-        let heartRate = Int(quantity.doubleValue(for: .count().unitDivided(by: .minute())))
-        Task { @MainActor in
-            self.watchHeartRate = heartRate
-            self.isWorkoutActive = true
-            self.liveHeartRateStatusMessage = nil
-        }
-    }
-
-    func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) { }
 }
 
 #else
@@ -349,6 +236,7 @@ extension HealthManager: HKLiveWorkoutBuilderDelegate {
 @Observable
 final class HealthManager {
     var isAuthorized: Bool = false
+    var isPermissionDenied: Bool = false
     var watchHeartRate: Int = 0
     var isWorkoutActive: Bool = false
     var liveHeartRateStatusMessage: String? =
@@ -358,8 +246,6 @@ final class HealthManager {
     func startWorkout() async { }
     func endWorkout() async { }
     func saveWorkoutSummary(duration: TimeInterval, calories: Double, distance: Double) async { }
-    func recordSample(heartRate: Int, distanceMeters: Double, calories: Double, watts: Int) async { }
-    func finalizeLocalWorkout(duration: TimeInterval, calories: Double, distance: Double) async { }
 }
 
 #endif

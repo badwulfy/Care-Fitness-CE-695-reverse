@@ -7,7 +7,7 @@ struct ContentView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
-                Text(workoutManager.isWorkoutActive ? "Workout actif" : "Prêt")
+                Text(workoutManager.isWorkoutActive ? "Séance active" : "Prêt")
                     .font(.headline)
 
                 Text(workoutManager.isAuthorized ? "Santé autorisé" : "Santé non autorisé")
@@ -15,13 +15,12 @@ struct ContentView: View {
                     .foregroundStyle(workoutManager.isAuthorized ? .green : .orange)
 
                 if isRequestInFlight {
-                    ProgressView()
-                        .controlSize(.small)
+                    ProgressView().controlSize(.small)
                 }
 
-                Text("\(workoutManager.heartRate) BPM")
-                    .font(.system(size: 30, weight: .bold, design: .rounded))
-                    .foregroundStyle(.red)
+                Text(workoutManager.heartRate > 0 ? "\(workoutManager.heartRate) BPM" : "— BPM")
+                    .font(.system(size: 36, weight: .bold, design: .rounded))
+                    .foregroundStyle(workoutManager.heartRate > 0 ? .red : .secondary)
 
                 if let message = workoutManager.statusMessage {
                     Text(message)
@@ -29,47 +28,29 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Button(primaryButtonTitle) {
-                    Task {
-                        isRequestInFlight = true
-                        if workoutManager.isWorkoutActive {
-                            await workoutManager.endWorkout()
-                        } else if !workoutManager.isAuthorized {
+                if !workoutManager.isAuthorized {
+                    Button("Autoriser Santé") {
+                        Task {
+                            isRequestInFlight = true
                             await workoutManager.requestAuthorization()
-                        } else {
-                            workoutManager.refreshAuthorizationStatus()
+                            isRequestInFlight = false
                         }
-                        isRequestInFlight = false
                     }
-                }
-                .buttonStyle(.borderedProminent)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Logs")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-
-                    ForEach(Array(workoutManager.debugLogs.enumerated()), id: \.offset) { _, log in
-                        Text(log)
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    .buttonStyle(.borderedProminent)
+                } else if workoutManager.isWorkoutActive {
+                    Button("Arrêter", role: .destructive) {
+                        Task {
+                            isRequestInFlight = true
+                            await workoutManager.endWorkout()
+                            isRequestInFlight = false
+                        }
                     }
+                    .buttonStyle(.borderedProminent)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding()
         }
-    }
-
-    private var primaryButtonTitle: String {
-        if workoutManager.isWorkoutActive {
-            return "Arrêter"
-        }
-        if workoutManager.isAuthorized {
-            return "En attente de l’iPhone"
-        }
-        return "Autoriser Santé"
     }
 }
 

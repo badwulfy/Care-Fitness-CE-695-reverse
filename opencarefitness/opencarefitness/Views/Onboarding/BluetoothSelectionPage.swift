@@ -70,6 +70,16 @@ struct BluetoothSelectionPage: View {
                         .font(.caption)
                         .foregroundStyle(.white.opacity(0.6))
                 }
+
+                if let preferredName = ble.preferredPeripheralName {
+                    HStack(spacing: 8) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(Color.neonCyan)
+                        Text("Appareil mémorisé : \(preferredName)")
+                            .font(.caption)
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+                }
                 
                 ScrollView {
                     VStack(spacing: 10) {
@@ -83,6 +93,9 @@ struct BluetoothSelectionPage: View {
                         }
                         
                         ForEach(ble.discoveredPeripherals, id: \.identifier) { peripheral in
+                            let isPreferred = ble.preferredPeripheralIdentifier == peripheral.identifier
+                            let isConnected = ble.connectedPeripheralIdentifier == peripheral.identifier
+
                             Button {
                                 ble.connect(to: peripheral)
                             } label: {
@@ -95,9 +108,13 @@ struct BluetoothSelectionPage: View {
                                             .opacity(0.5)
                                     }
                                     Spacer()
-                                    if ble.connectionState == .connected {
+                                    if isConnected {
                                         Image(systemName: "checkmark.circle.fill")
                                             .foregroundStyle(Color.neonCyan)
+                                    } else if isPreferred {
+                                        Text("mémorisé")
+                                            .font(.caption2.weight(.bold))
+                                            .foregroundStyle(.white.opacity(0.65))
                                     }
                                 }
                                 .padding(12)

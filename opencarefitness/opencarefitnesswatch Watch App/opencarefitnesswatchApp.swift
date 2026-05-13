@@ -1,6 +1,7 @@
 import SwiftUI
 import WatchKit
 import HealthKit
+import WatchConnectivity
 
 @main
 struct opencarefitnesswatch_Watch_AppApp: App {
@@ -15,6 +16,8 @@ struct opencarefitnesswatch_Watch_AppApp: App {
     }
 }
 
+// MARK: - WorkoutManager
+
 @Observable
 final class WorkoutManager: NSObject {
     static let shared = WorkoutManager()
@@ -23,85 +26,43 @@ final class WorkoutManager: NSObject {
     var isAuthorized: Bool = false
     var isWorkoutActive: Bool = false
     var statusMessage: String?
-    var debugLogs: [String] = []
 
     private let store = HKHealthStore()
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
+    private var wcSession: WCSession?
+    /// Test session (iPhone Settings) → discard workout on stop instead of saving.
+    private var isTestSession: Bool = false
 
     private override init() {
         super.init()
-        statusMessage = "Autorise Santé sur la montre pour activer le mirroring."
-        log("WorkoutManager initialise.")
+        statusMessage = "Autorise Santé sur la montre, puis lance la séance depuis l’iPhone."
         refreshAuthorizationStatus()
+        activateWatchConnectivity()
     }
 
-    func log(_ message: String) {
-        let line = "[Watch] \(message)"
-        print(line)
-        Task { @MainActor in
-            self.debugLogs.append(line)
-            if self.debugLogs.count > 20 {
-                self.debugLogs.removeFirst(self.debugLogs.count - 20)
-            }
-        }
-    }
+    // MARK: - Authorization
 
     func requestAuthorization() async {
-        log("Bouton Autoriser Santé cliqué.")
         guard HKHealthStore.isHealthDataAvailable() else {
-            log("HealthKit indisponible sur cette montre.")
-            await MainActor.run {
-                statusMessage = "HealthKit indisponible sur cette montre."
-            }
+            await MainActor.run { statusMessage = "HealthKit indisponible sur cette montre." }
             return
         }
-
         let readTypes: Set<HKObjectType> = [
             HKObjectType.quantityType(forIdentifier: .heartRate)!,
             HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.quantityType(forIdentifier: .distanceCycling)!,
             HKObjectType.workoutType()
         ]
-
         let writeTypes: Set<HKSampleType> = [
             HKObjectType.workoutType(),
-            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!,
-            HKObjectType.quantityType(forIdentifier: .distanceCycling)!
+            HKObjectType.quantityType(forIdentifier: .activeEnergyBurned)!
         ]
-
         do {
-            log("Demande d'autorisation HealthKit envoyée.")
             try await store.requestAuthorization(toShare: writeTypes, read: readTypes)
-            log("requestAuthorization termine sans exception.")
-            let workoutStatus = store.authorizationStatus(for: HKObjectType.workoutType())
-            let heartRateStatus = store.authorizationStatus(for: HKObjectType.quantityType(forIdentifier: .heartRate)!)
-            log("Statut workout=\(workoutStatus.rawValue), heartRate=\(heartRateStatus.rawValue)")
-            refreshAuthorizationStatus()
-            await MainActor.run {
-                statusMessage = "Santé autorisé sur la montre. Lance le test depuis l’iPhone."
-            }
         } catch {
-            log("requestAuthorization a echoue: \(error.localizedDescription)")
-            refreshAuthorizationStatus()
-            await MainActor.run {
-                statusMessage = "Autorisation refusée: \(error.localizedDescription)"
-            }
+            await MainActor.run { statusMessage = "Autorisation refusée: \(error.localizedDescription)" }
         }
-    }
-
-    func startWorkout(with configuration: HKWorkoutConfiguration) async {
-        log("Demande de demarrage workout recue depuis l'iPhone.")
-        do {
-            try await requestAuthorizationIfNeeded()
-            try await startPrimaryWorkout(with: configuration)
-        } catch {
-            log("Demarrage workout impossible: \(error.localizedDescription)")
-            await MainActor.run {
-                statusMessage = "Impossible de démarrer le workout: \(error.localizedDescription)"
-                isWorkoutActive = false
-            }
-        }
+        refreshAuthorizationStatus()
     }
 
     func refreshAuthorizationStatus() {
@@ -111,187 +72,208 @@ final class WorkoutManager: NSObject {
             self.isAuthorized = authorized
             if !self.isWorkoutActive {
                 self.statusMessage = authorized
-                    ? "Santé autorisé sur la montre. Lance le test depuis l’iPhone."
-                    : "Autorise Santé sur la montre pour activer le mirroring."
+                    ? "Prêt. Lance la séance depuis l’iPhone."
+                    : "Autorise Santé sur la montre pour activer le suivi cardiaque."
             }
         }
-        log("refreshAuthorizationStatus -> workout=\(workoutStatus.rawValue), authorized=\(authorized)")
+    }
+
+    // MARK: - Workout (iPhone-controlled)
+
+    func startWorkout(isTest: Bool = false) async {
+        guard !isWorkoutActive else { return }
+        if !isAuthorized { await requestAuthorization() }
+        guard store.authorizationStatus(for: HKObjectType.workoutType()) == .sharingAuthorized else {
+            sendToPhone(["state": "error", "message": "Santé non autorisé sur la montre."])
+            return
+        }
+        await MainActor.run { self.isTestSession = isTest }
+
+        let config = HKWorkoutConfiguration()
+        config.activityType = .elliptical
+        config.locationType = .indoor
+
+        do {
+            let session = try HKWorkoutSession(healthStore: store, configuration: config)
+            let builder = session.associatedWorkoutBuilder()
+            let dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: config)
+            dataSource.enableCollection(for: HKQuantityType(.heartRate), predicate: nil)
+            dataSource.enableCollection(for: HKQuantityType(.activeEnergyBurned), predicate: nil)
+            builder.dataSource = dataSource
+            session.delegate = self
+            builder.delegate = self
+
+            let start = Date()
+            session.startActivity(with: start)
+            try await builder.beginCollection(at: start)
+
+            await MainActor.run {
+                self.session = session
+                self.builder = builder
+                self.isWorkoutActive = true
+                self.statusMessage = "Mesure cardiaque en cours."
+            }
+            sendToPhone(["state": "started"])
+        } catch {
+            sendToPhone(["state": "error", "message": error.localizedDescription])
+            await MainActor.run {
+                self.statusMessage = "Impossible de démarrer: \(error.localizedDescription)"
+                self.isWorkoutActive = false
+            }
+        }
     }
 
     func endWorkout() async {
-        log("Demande d'arret workout.")
-        guard let session, let builder else { return }
-
-        let endDate = Date()
-        session.stopActivity(with: endDate)
-
-        do {
-            try await builder.endCollection(at: endDate)
-            try await builder.finishWorkout()
-            try await session.stopMirroringToCompanionDevice()
-            log("Workout termine et mirroring arrete.")
-        } catch {
-            log("Erreur pendant la fin du workout: \(error.localizedDescription)")
+        guard let session, let builder else {
             await MainActor.run {
-                statusMessage = "Erreur de fin de workout: \(error.localizedDescription)"
+                self.isWorkoutActive = false
+                self.heartRate = 0
             }
-        }
-
-        session.end()
-        await MainActor.run {
-            self.session = nil
-            self.builder = nil
-            self.isWorkoutActive = false
-            self.heartRate = 0
-        }
-    }
-
-    private func requestAuthorizationIfNeeded() async throws {
-        let workoutStatus = store.authorizationStatus(for: HKObjectType.workoutType())
-        log("Verification authorization workout status=\(workoutStatus.rawValue)")
-        if workoutStatus == .notDetermined {
-            log("Authorization non determinee, demande en cours.")
-            await requestAuthorization()
-        }
-        if store.authorizationStatus(for: HKObjectType.workoutType()) != .sharingAuthorized {
-            log("Authorization workout refusee apres verification.")
-            throw HKError(.errorAuthorizationDenied)
-        }
-        refreshAuthorizationStatus()
-        log("Authorization workout validee.")
-    }
-
-    private func startPrimaryWorkout(with configuration: HKWorkoutConfiguration) async throws {
-        if isWorkoutActive {
-            log("Workout deja actif, aucune action.")
+            sendToPhone(["state": "ended"])
             return
         }
 
-        log("Creation de la session workout primaire.")
-        let session = try HKWorkoutSession(healthStore: store, configuration: configuration)
-        let builder = session.associatedWorkoutBuilder()
-        let dataSource = HKLiveWorkoutDataSource(healthStore: store, workoutConfiguration: configuration)
-        dataSource.enableCollection(for: HKQuantityType(.heartRate), predicate: nil)
-        dataSource.enableCollection(for: HKQuantityType(.activeEnergyBurned), predicate: nil)
+        let endDate = Date()
+        // Synchronous, fast — stops the sensors right away.
+        session.stopActivity(with: endDate)
 
-        builder.dataSource = dataSource
-        session.delegate = self
-        builder.delegate = self
-
-        self.session = session
-        self.builder = builder
-
-        log("Demarrage du mirroring vers l'iPhone.")
-        try await session.startMirroringToCompanionDevice()
-
-        let startDate = Date()
-        log("Demarrage session.startActivity et builder.beginCollection.")
-        session.startActivity(with: startDate)
-        try await builder.beginCollection(at: startDate)
-
-        log("Workout primaire demarre sur la montre.")
+        // Flip UI immediately; Health writes happen below in the background.
+        let testMode = isTestSession
         await MainActor.run {
-            self.isWorkoutActive = true
-            self.statusMessage = "Mirroring actif vers l’iPhone."
+            self.isWorkoutActive = false
+            self.heartRate = 0
+            self.statusMessage = testMode ? "Test terminé." : "Sauvegarde en cours…"
+            self.isTestSession = false
+        }
+        sendToPhone(["state": "ended"])
+
+        do {
+            try await builder.endCollection(at: endDate)
+            if testMode {
+                // Don't persist the workout — Settings test isn't a real session.
+                builder.discardWorkout()
+            } else {
+                try await builder.finishWorkout()
+            }
+        } catch {
+            print("[Watch] endWorkout error: \(error.localizedDescription)")
+        }
+        session.end()
+
+        await MainActor.run {
+            self.session = nil
+            self.builder = nil
+            if !testMode { self.statusMessage = "Séance terminée." }
         }
     }
 
-    private func sendHeartRateToPhone(_ heartRate: Int) {
-        guard let session else { return }
-        do {
-            let payload = try JSONEncoder().encode(HeartRatePayload(heartRate: heartRate))
-            Task {
-                do {
-                    try await session.sendToRemoteWorkoutSession(data: payload)
-                    self.log("Frequence \(heartRate) BPM envoyee a l'iPhone.")
-                } catch {
-                    self.log("Envoi iPhone echoue: \(error.localizedDescription)")
-                }
+    // MARK: - WatchConnectivity
+
+    private func activateWatchConnectivity() {
+        guard WCSession.isSupported() else { return }
+        let s = WCSession.default
+        s.delegate = self
+        s.activate()
+        wcSession = s
+    }
+
+    private func sendToPhone(_ payload: [String: Any]) {
+        guard let s = wcSession, s.activationState == .activated else { return }
+
+        // HR streaming: applicationContext keeps flowing in background (when
+        // Watch screen is off but HKWorkoutSession keeps us alive). It has
+        // latest-value-wins semantics, which is exactly what we want.
+        if payload.keys.contains("hr") {
+            do { try s.updateApplicationContext(payload) }
+            catch { print("[WC] updateApplicationContext failed: \(error.localizedDescription)") }
+            return
+        }
+
+        // Commands/state: try live message first, fall back to queued userInfo.
+        if s.isReachable {
+            s.sendMessage(payload, replyHandler: nil) { err in
+                print("[WC] sendMessage failed: \(err.localizedDescription)")
+                s.transferUserInfo(payload)
             }
-        } catch {
-            log("Encodage payload HR impossible: \(error.localizedDescription)")
-            Task { @MainActor in
-                self.statusMessage = "Envoi iPhone impossible: \(error.localizedDescription)"
-            }
+        } else {
+            s.transferUserInfo(payload)
         }
     }
 }
 
+// MARK: - HKWorkoutSessionDelegate
+
 extension WorkoutManager: HKWorkoutSessionDelegate {
-    func workoutSession(_ workoutSession: HKWorkoutSession, didChangeTo toState: HKWorkoutSessionState, from fromState: HKWorkoutSessionState, date: Date) {
-        log("Session state \(fromState.rawValue) -> \(toState.rawValue)")
+    func workoutSession(_ workoutSession: HKWorkoutSession,
+                        didChangeTo toState: HKWorkoutSessionState,
+                        from fromState: HKWorkoutSessionState,
+                        date: Date) {
         Task { @MainActor in
             self.isWorkoutActive = (toState == .running)
             if toState == .ended || toState == .stopped {
                 self.heartRate = 0
-                self.statusMessage = "Workout arrêté sur la montre."
+                self.statusMessage = "Séance arrêtée."
             }
         }
     }
 
     func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
-        log("Session en erreur: \(error.localizedDescription)")
+        sendToPhone(["state": "error", "message": error.localizedDescription])
         Task { @MainActor in
-            self.statusMessage = "Session watch en erreur: \(error.localizedDescription)"
+            self.statusMessage = "Erreur session: \(error.localizedDescription)"
             self.isWorkoutActive = false
         }
     }
 }
 
+// MARK: - HKLiveWorkoutBuilderDelegate
+
 extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
     func workoutBuilder(_ workoutBuilder: HKLiveWorkoutBuilder, didCollectDataOf collectedTypes: Set<HKSampleType>) {
-        log("Builder didCollectDataOf avec \(collectedTypes.count) types.")
         guard collectedTypes.contains(HKQuantityType(.heartRate)),
-              let statistics = workoutBuilder.statistics(for: HKQuantityType(.heartRate)),
-              let quantity = statistics.mostRecentQuantity() else {
-            log("Pas de heart rate exploitable dans ce batch.")
-            return
-        }
+              let stats = workoutBuilder.statistics(for: HKQuantityType(.heartRate)),
+              let q = stats.mostRecentQuantity() else { return }
 
-        let heartRate = Int(quantity.doubleValue(for: .count().unitDivided(by: .minute())))
-        log("Heart rate recue sur la montre: \(heartRate) BPM")
-        Task { @MainActor in
-            self.heartRate = heartRate
-            self.statusMessage = "Fréquence cardiaque mesurée sur la montre."
-        }
-        sendHeartRateToPhone(heartRate)
+        let hr = Int(q.doubleValue(for: .count().unitDivided(by: .minute())))
+        Task { @MainActor in self.heartRate = hr }
+        sendToPhone(["hr": hr])
     }
 
     func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) { }
 }
 
-final class WatchAppDelegate: NSObject, WKApplicationDelegate {
-    func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
-        print("[Watch] handle(workoutConfiguration:) appele par le systeme.")
-        Task {
-            await WorkoutManager.shared.startWorkout(with: workoutConfiguration)
-        }
+// MARK: - WCSessionDelegate
+
+extension WorkoutManager: WCSessionDelegate {
+    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: Error?) {
+        print("[WC] activation=\(activationState.rawValue) err=\(error?.localizedDescription ?? "-")")
     }
 
-    func handleActiveWorkoutRecovery() {
-        print("[Watch] handleActiveWorkoutRecovery appele.")
-        Task {
-            do {
-                if let recoveredSession = try await HKHealthStore().recoverActiveWorkoutSession() {
-                    let manager = WorkoutManager.shared
-                    let builder = recoveredSession.associatedWorkoutBuilder()
-                    recoveredSession.delegate = manager
-                    builder.delegate = manager
-                    manager.log("Session workout recuperee apres relance.")
-                    await MainActor.run {
-                        manager.statusMessage = "Workout récupéré après relance."
-                    }
-                }
-            } catch {
-                WorkoutManager.shared.log("Recovery impossible: \(error.localizedDescription)")
-                await MainActor.run {
-                    WorkoutManager.shared.statusMessage = "Recovery impossible: \(error.localizedDescription)"
-                }
-            }
+    func session(_ session: WCSession, didReceiveMessage message: [String : Any]) {
+        handlePhonePayload(message)
+    }
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
+        handlePhonePayload(userInfo)
+    }
+
+    private func handlePhonePayload(_ p: [String: Any]) {
+        guard let cmd = p["cmd"] as? String else { return }
+        switch cmd {
+        case "start":
+            let test = (p["test"] as? Bool) ?? false
+            Task { await self.startWorkout(isTest: test) }
+        case "stop":
+            Task { await self.endWorkout() }
+        default: break
         }
     }
 }
 
-private struct HeartRatePayload: Codable {
-    let heartRate: Int
+// MARK: - App delegate
+
+final class WatchAppDelegate: NSObject, WKApplicationDelegate {
+    func handle(_ workoutConfiguration: HKWorkoutConfiguration) {
+        // Reserved for HKWorkoutSession mirroring from iPhone; not used here.
+        // The iPhone drives start/stop via WatchConnectivity instead.
+    }
 }
