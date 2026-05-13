@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ResistancePanel: View {
     @Environment(PatternEngine.self) private var engine
+    @Environment(BluetoothManager.self) private var ble
     let isPad: Bool
     var safeAreaTrailing: CGFloat = 0
     
@@ -27,13 +28,29 @@ struct ResistancePanel: View {
             .buttonStyle(HitButtonStyle())
 
             // Override status
-            VStack(spacing: 2) {
+            VStack(spacing: 8) {
                 Text("OFFSET")
                     .font(.system(size: 8, weight: .bold))
                     .foregroundStyle(.secondary)
                 Text(isDefaultMultiplier ? "OFF" : String(format: "x%.2f", engine.difficultyMultiplier))
                     .font(.system(size: isPad ? 14 : 11, weight: .bold, design: .monospaced))
                     .foregroundStyle(isDefaultMultiplier ? AnyShapeStyle(.secondary) : AnyShapeStyle(Color.neonCyan))
+
+                VStack(spacing: 2) {
+                    Text("NIVEAU ENVOYÉ")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    Text("\(ble.lastSentResistanceLevel)")
+                        .font(.system(size: isPad ? 24 : 18, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("cible \(engine.currentResistance)")
+                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(
+                            ble.lastSentResistanceLevel == engine.currentResistance
+                                ? AnyShapeStyle(.secondary)
+                                : AnyShapeStyle(Color.neonYellow)
+                        )
+                }
             }
             .padding(.vertical, 4)
 
@@ -53,7 +70,8 @@ struct ResistancePanel: View {
         }
         .padding(.vertical, 20)
         .padding(.horizontal, isPad ? 12 : 8)
-        .padding(.trailing, isPad ? 0 : max(0, safeAreaTrailing - 8)) // Repousse les boutons pour éviter l'encoche
+        // Inset extra to keep the +/- buttons clear of the right rounded-corner / DI zone.
+        .padding(.trailing, isPad ? 0 : max(0, safeAreaTrailing))
         .frame(maxHeight: .infinity, alignment: .center)
         .background(
             Color.black.opacity(0.4)

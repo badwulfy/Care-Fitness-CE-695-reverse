@@ -48,6 +48,7 @@ struct WorkoutControls: View {
                 withAnimation {
                     if engine.isPaused {
                         engine.resume()
+                        ble.targetResistance = engine.currentResistance
                     } else {
                         engine.pause()
                         // Safety: drop resistance to minimum when paused
@@ -61,9 +62,11 @@ struct WorkoutControls: View {
                     Text(engine.isPaused ? "REPRENDRE" : "PAUSE")
                         .font(.subheadline.weight(.bold))
                         .tracking(2)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                 }
                 .foregroundStyle(engine.isPaused ? AnyShapeStyle(.black) : AnyShapeStyle(Color.neonYellow))
-                .padding(.horizontal, 32)
+                .padding(.horizontal, 24)
                 .frame(height: 56)
                 .background(
                     engine.isPaused

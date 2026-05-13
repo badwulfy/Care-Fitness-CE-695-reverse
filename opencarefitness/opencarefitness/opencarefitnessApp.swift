@@ -13,16 +13,24 @@ struct opencarefitnessApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     @State private var navigationManager = NavigationManager()
-    @State private var bleManager = BluetoothManager()
-    @State private var engine = PatternEngine()
-    @State private var healthManager = HealthManager()
+    @State private var bleManager: BluetoothManager
+    @State private var engine: PatternEngine
+    @State private var healthManager: HealthManager
     @State private var sessionManager: WorkoutSessionManager
 
     init() {
+        // Fix for "Application Support" directory not existing in some simulator/sandbox states
+        let fileManager = FileManager.default
+        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            if !fileManager.fileExists(atPath: appSupport.path) {
+                try? fileManager.createDirectory(at: appSupport, withIntermediateDirectories: true)
+            }
+        }
+
         let ble = BluetoothManager()
         let eng = PatternEngine()
         let health = HealthManager()
-        
+
         self._bleManager = State(initialValue: ble)
         self._engine = State(initialValue: eng)
         self._healthManager = State(initialValue: health)

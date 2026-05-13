@@ -28,6 +28,15 @@ struct WorkoutView: View {
             .safeAreaInsets ?? .zero
     }
 
+    /// Orientation actuelle de la scène. On l'utilise pour savoir de QUEL côté
+    /// se trouve la Dynamic Island : les `safeAreaInsets` sont symétriques en
+    /// paysage sur iPhone 17 Pro et n'indiquent donc pas le côté de l'encoche.
+    private var sceneOrientation: UIInterfaceOrientation {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.interfaceOrientation ?? .portrait
+    }
+
     var onStop: () -> Void
 
     private var isPad: Bool {
@@ -45,6 +54,7 @@ struct WorkoutView: View {
     @State private var rpmHistory: [Double] = []
     @State private var showStopConfirm = false
     @State private var inactiveSeconds: Int = 0
+    @State private var activeSeconds: Int = 0
 
     enum ChartMetric: String, CaseIterable, Identifiable {
         case power = "Puissance"
@@ -121,18 +131,29 @@ struct WorkoutView: View {
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
             guard engine.isRunning else { return }
             
-            let isStale = Date().timeIntervalSince(ble.telemetry.lastUpdate) > 5.0
-            let isStopped = ble.telemetry.rpm == 0 && ble.telemetry.speedKmh == 0 && ble.telemetry.watts == 0
+            let isStale = Date().timeIntervalSince(ble.telemetry.lastUpdate) > 4.0
+            let hasMeaningfulActivity = ble.telemetry.rpm >= 15 || ble.telemetry.watts >= 20 || ble.telemetry.speedKmh >= 2.5
             
-            if isStopped || isStale {
+            if isStale || !hasMeaningfulActivity {
                 inactiveSeconds += 1
-                if inactiveSeconds >= 5 && !engine.isPaused {
-                    withAnimation { engine.pause() }
+                activeSeconds = 0
+
+                if inactiveSeconds >= 8 && !engine.isPaused {
+                    withAnimation {
+                        engine.pause()
+                        ble.targetResistance = 1
+                    }
                 }
             } else {
                 inactiveSeconds = 0
-                if engine.isPaused {
-                    withAnimation { engine.resume() }
+                activeSeconds += 1
+
+                // Reprise automatique après 3 secondes d'activité
+                if engine.isPaused && activeSeconds >= 3 {
+                    withAnimation {
+                        engine.resume()
+                        ble.targetResistance = engine.currentResistance
+                    }
                 }
             }
         }
@@ -142,48 +163,52 @@ struct WorkoutView: View {
 
     // MARK: - Layouts
 
-    /// Layout landscape (iPhone + iPad)
-    /// - geoInsets : insets du GeometryReader (fiables pour top/bottom)
-    /// - windowInsets : insets de la UIWindow (fiables pour leading/trailing / DI)
     @ViewBuilder
     private func landscapeLayout(geoInsets: EdgeInsets, windowInsets: UIEdgeInsets) -> some View {
-        // On utilise windowInsets pour détecter la position réelle de la Dynamic Island.
-        let diOnLeft = windowInsets.left > windowInsets.right
-        let leadingSafe = CGFloat(windowInsets.left)
-        let trailingSafe = CGFloat(windowInsets.right)
+        // safeAreaInsets sont symétriques en paysage sur iPhone 17 Pro
+        // (62pt à gauche ET à droite) — ils ne nous disent pas où est la DI.
+        // On se fie donc à interfaceOrientation pour savoir où l'encoche se trouve,
+        // et on ne mange l'inset que de CE côté-là. Le reste va bord-à-bord.
+        let diOnLeft  = sceneOrientation == .landscapeRight   // home indicator à droite ⇒ DI à gauche visuellement
+        let diInset   = CGFloat(max(windowInsets.left, windowInsets.right))
+        let bottomPad = CGFloat(max(windowInsets.bottom, 8))
+
+        let leftEdgePad:  CGFloat = diOnLeft  ? diInset : 8
+        let rightEdgePad: CGFloat = diOnLeft  ? 8       : diInset
+        // La résistance "mange" l'encoche quand celle-ci est à droite.
+        let resistanceTrailingPad: CGFloat = isPad ? 0 : (diOnLeft ? 0 : diInset)
 
         HStack(spacing: 0) {
             VStack(spacing: isPad ? 20 : 0) {
                 chartPanel
                     .frame(maxHeight: .infinity)
-                    .padding(.bottom, isPad ? 0 : 16)
+                    .padding(.bottom, isPad ? 0 : 12)
 
                 if isPad { metricsGrid(isCompact: false).padding(.bottom, 8) }
 
                 footerControls
                     .frame(height: isPad ? 64 : 56)
             }
-            // Si DI à gauche → on décale le contenu pour ne pas être sous l'encoche.
-            .padding(.leading, diOnLeft ? max(leadingSafe, 16) : 16)
+            .padding(.leading, leftEdgePad)
             .padding(.trailing, 8)
-            .padding(.vertical, 8)
+            .padding(.top, 8)
+            .padding(.bottom, bottomPad)
             .frame(maxWidth: .infinity)
 
             if !isPad {
                 metricsGrid(isCompact: true)
-                    .padding(.vertical, 12)
-                    .frame(width: 280)
+                    .padding(.top, 8)
+                    .padding(.bottom, bottomPad)
+                    .frame(width: 240)
             }
 
-            // Si DI à droite → on donne de l'espace trailing au panel résistance.
-            let rightSafeArea = diOnLeft ? 0 : trailingSafe
-            resistancePanel(trailingSafeArea: rightSafeArea)
-                .frame(width: isPad ? 160 : 130 + rightSafeArea)
+            resistancePanel(trailingSafeArea: resistanceTrailingPad)
+                .padding(.trailing, diOnLeft ? rightEdgePad : 0)
+                .frame(width: isPad ? 160 : 130 + resistanceTrailingPad + (diOnLeft ? rightEdgePad : 0))
         }
         .ignoresSafeArea(.all, edges: [.horizontal, .bottom])
     }
 
-    /// Layout portrait de secours (iPhone pas encore tourné / rotation ratée)
     @ViewBuilder
     private func portraitLayout(insets: EdgeInsets) -> some View {
         VStack(spacing: 0) {
@@ -214,7 +239,6 @@ struct WorkoutView: View {
         VStack(alignment: .leading, spacing: 12) {
             WorkoutHeader(selectedMetric: $selectedMetric, isPad: isPad)
 
-            // Chart
             PatternChartView(
                 pattern: engine.selectedPattern,
                 progress: engine.progress,
@@ -223,7 +247,6 @@ struct WorkoutView: View {
                 difficultyMultiplier: engine.difficultyMultiplier
             )
 
-            // Progress bar
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule()
@@ -293,45 +316,4 @@ struct WorkoutView: View {
     private func resistancePanel(trailingSafeArea: CGFloat) -> some View {
         ResistancePanel(isPad: isPad, safeAreaTrailing: trailingSafeArea)
     }
-}
-
-// MARK: - Previews
-
-private func createMockBLE() -> BluetoothManager {
-    let ble = BluetoothManager()
-    ble.telemetry.watts = 185
-    ble.telemetry.rpm = 65
-    ble.telemetry.speedKmh = 24.5
-    ble.telemetry.distance = 420
-    ble.telemetry.calories = 115
-    ble.telemetry.heartRate = 142
-    return ble
-}
-
-#Preview("Workout Dashboard") {
-    let engine = PatternEngine()
-    engine.selectedPattern = .pyramid
-    engine.goalDurationSeconds = 2700
-    engine.start()
-
-    return WorkoutView(onStop: { })
-        .environment(createMockBLE())
-        .environment(engine)
-        .environment(HealthManager())
-        .background(Color.appBackground)
-        .preferredColorScheme(.dark)
-}
-
-#Preview("Workout — iPad", traits: .landscapeLeft) {
-    let engine = PatternEngine()
-    engine.selectedPattern = .hiit
-    engine.goalDurationSeconds = 1800
-    engine.start()
-
-    return WorkoutView(onStop: { })
-        .environment(createMockBLE())
-        .environment(engine)
-        .environment(HealthManager())
-        .background(Color.appBackground)
-        .preferredColorScheme(.dark)
 }

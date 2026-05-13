@@ -83,7 +83,7 @@ enum DeviceOrientationHelper {
     static func lockOrientation(_ orientation: UIInterfaceOrientationMask) {
         // Essential: Update the global lock first
         AppDelegate.orientationLock = orientation
-        
+
         // Force the rotation update for iOS 16+
         if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: orientation)) { error in
@@ -95,7 +95,7 @@ enum DeviceOrientationHelper {
 
 struct ForceOrientationModifier: ViewModifier {
     let orientation: UIInterfaceOrientationMask
-    
+
     func body(content: Content) -> some View {
         content
             .onAppear {
