@@ -97,6 +97,11 @@ struct WorkoutView: View {
                 }
             }
             .animation(.easeInOut(duration: 0.25), value: isActuallyLandscape)
+            .overlay(alignment: .top) {
+                connectionBanner
+                    .padding(.top, max(win.top, 8))
+                    .padding(.horizontal, max(max(win.left, win.right), 16))
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             // Délai pour laisser UIKit finaliser la rotation, puis force un re-render.
@@ -159,6 +164,46 @@ struct WorkoutView: View {
         }
         .background(Color.appBackground)
         .forceOrientationOnPhone(.landscape)
+    }
+
+    // MARK: - Status banner
+
+    /// Message shown at the top of the workout view when something the user
+    /// should know is going on (BT reconnecting, telemetry stale, Health
+    /// permission missing). Returns nil → no banner.
+    private var bannerInfo: (text: String, isError: Bool)? {
+        let state = ble.effectiveConnectionState
+        switch state {
+        case .scanning:   return ("Recherche du vélo…", false)
+        case .connecting: return ("Connexion au vélo…", false)
+        case .error:      return ("Erreur Bluetooth.",   true)
+        case .connected where !ble.telemetry.isReceiving:
+            return ("Plus de données du vélo. Reprise…", true)
+        default: break
+        }
+        if health.isPermissionDenied {
+            return ("Santé refusé : la séance ne sera pas sauvegardée.", true)
+        }
+        return nil
+    }
+
+    @ViewBuilder
+    private var connectionBanner: some View {
+        if let info = bannerInfo {
+            HStack(spacing: 10) {
+                if !info.isError { ProgressView().tint(.white).scaleEffect(0.7) }
+                Text(info.text)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.7), in: Capsule())
+            .overlay(Capsule().stroke(
+                info.isError ? Color.neonRed.opacity(0.7) : Color.neonYellow.opacity(0.6),
+                lineWidth: 1))
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
     }
 
     // MARK: - Layouts

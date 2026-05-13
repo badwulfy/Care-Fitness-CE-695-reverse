@@ -25,6 +25,9 @@ struct ContentView: View {
     @Environment(HealthManager.self) private var health
     @Environment(WorkoutSessionManager.self) private var sessionManager
 
+    @State private var setupActivitySeconds = 0
+    @State private var autoStartCooldownUntil = Date.distantPast
+
     var body: some View {
         mainTabView
             .preferredColorScheme(.dark)
@@ -37,11 +40,20 @@ struct ContentView: View {
             .fullScreenCover(isPresented: onboardingBinding) {
                 OnboardingView()
             }
+            .onAppear { recoverCrashedSessionIfNeeded() }
             .onChange(of: scenePhase, handleScenePhaseChange)
             .onChange(of: ble.telemetry.lastUpdate, updateStats)
-            .onChange(of: ble.telemetry.rpm, checkAutoStart)
             .onChange(of: ble.telemetry.distance, updateDistance)
             .onChange(of: engine.isGoalReached, checkGoalReached)
+            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+                evaluateSetupAutoStart()
+            }
+    }
+
+    private func recoverCrashedSessionIfNeeded() {
+        if let recovered = sessionManager.recoverInFlightSessionIfNeeded(context: modelContext) {
+            print("[Recovery] Restored crashed session of \(recovered.durationSeconds)s")
+        }
     }
 
     // MARK: - Subviews
@@ -51,7 +63,7 @@ struct ContentView: View {
         ZStack(alignment: .bottom) {
             TabView {
                 Tab {
-                    SetupView(onStart: startWorkout)
+                    SetupView(onStart: { startWorkout() })
                 } label: {
                     Label("Préparation", systemImage: "figure.elliptical")
                         .foregroundStyle(Color.neonCyan)
@@ -154,12 +166,6 @@ struct ContentView: View {
         )
     }
 
-    private func checkAutoStart() {
-        if nav.currentScreen == .setup && ble.telemetry.rpm > 10 && ble.effectiveConnectionState == .connected {
-            startWorkout()
-        }
-    }
-
     private func updateDistance() {
         guard nav.currentScreen == .workout else { return }
         engine.currentDistanceHm = ble.telemetry.distance
@@ -171,12 +177,47 @@ struct ContentView: View {
         }
     }
 
+    private func evaluateSetupAutoStart() {
+        guard nav.hasCompletedOnboarding,
+              nav.currentScreen == .setup,
+              !engine.isRunning,
+              ble.effectiveConnectionState == .connected,
+              Date() >= autoStartCooldownUntil else {
+            setupActivitySeconds = 0
+            return
+        }
+
+        // Seuil de fraîcheur des données synchronisé sur 3.0s
+        let telemetryIsFresh = Date().timeIntervalSince(ble.telemetry.lastUpdate) <= 3.0
+        let sustainedActivity = ble.telemetry.rpm >= 20 || ble.telemetry.watts >= 35 || ble.telemetry.speedKmh >= 4.0
+
+        if telemetryIsFresh && sustainedActivity {
+            setupActivitySeconds += 1
+            // Démarrage automatique après 3 secondes d'activité soutenue
+            if setupActivitySeconds >= 3 {
+                startWorkout(autoTriggered: true)
+                setupActivitySeconds = 0
+            }
+        } else {
+            setupActivitySeconds = 0
+        }
+    }
+
     // MARK: - Workout Lifecycle
 
-    private func startWorkout() {
+    private func startWorkout(autoTriggered: Bool = false) {
+        guard nav.currentScreen != .workout, !engine.isRunning else { return }
+        if autoTriggered && ble.effectiveConnectionState != .connected {
+            return
+        }
+
         sessionManager.start()
 
         #if os(iOS)
+        // Empêche l'écran de se verrouiller pendant qu'on pédale — l'utilisateur
+        // a les mains sur le guidon, l'inactivité tactile est attendue.
+        UIApplication.shared.isIdleTimerDisabled = true
+
         if UIDevice.current.userInterfaceIdiom == .phone,
            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
@@ -188,8 +229,12 @@ struct ContentView: View {
 
     private func stopWorkout() {
         _ = sessionManager.stop(context: modelContext)
+        autoStartCooldownUntil = Date().addingTimeInterval(8)
+        setupActivitySeconds = 0
 
         #if os(iOS)
+        UIApplication.shared.isIdleTimerDisabled = false
+
         if UIDevice.current.userInterfaceIdiom == .phone,
            let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
             windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))

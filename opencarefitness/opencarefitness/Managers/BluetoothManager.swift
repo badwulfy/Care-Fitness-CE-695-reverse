@@ -25,6 +25,11 @@ private enum BLEConstants {
     static let disconnectTimeout: TimeInterval = 6.0
 }
 
+private enum BLEStorageKeys {
+    static let preferredPeripheralID = "preferredPeripheralID"
+    static let preferredPeripheralName = "preferredPeripheralName"
+}
+
 // MARK: - Connection State
 
 enum BLEConnectionState: String {
@@ -46,6 +51,19 @@ final class BluetoothManager: NSObject {
     var isBluetoothPoweredOn: Bool = false
     var batteryLevel: Int?
     var telemetry = Telemetry()
+    var lastSentResistanceLevel: Int = 1
+    var preferredPeripheralIdentifier: UUID? {
+        didSet {
+            UserDefaults.standard.set(preferredPeripheralIdentifier?.uuidString, forKey: BLEStorageKeys.preferredPeripheralID)
+        }
+    }
+    var preferredPeripheralName: String? {
+        didSet {
+            UserDefaults.standard.set(preferredPeripheralName, forKey: BLEStorageKeys.preferredPeripheralName)
+        }
+    }
+    var connectedPeripheralIdentifier: UUID?
+    var connectedPeripheralName: String?
 
     // Debug override : force l'état connecté sans hardware
     var isDebugForceConnected: Bool = false
@@ -75,8 +93,13 @@ final class BluetoothManager: NSObject {
     // Keep-alive task
     private var keepAliveTask: Task<Void, Never>?
     private var disconnectWatchTask: Task<Void, Never>?
+    private var isAttemptingPreferredReconnect = false
 
     override init() {
+        if let rawIdentifier = UserDefaults.standard.string(forKey: BLEStorageKeys.preferredPeripheralID) {
+            preferredPeripheralIdentifier = UUID(uuidString: rawIdentifier)
+        }
+        preferredPeripheralName = UserDefaults.standard.string(forKey: BLEStorageKeys.preferredPeripheralName)
         super.init()
         // CBCentralManager is now initialized lazily to avoid premature permission dialogs.
     }
@@ -107,6 +130,10 @@ final class BluetoothManager: NSObject {
 
     func connect(to peripheral: CBPeripheral) {
         centralManager?.stopScan()
+        preferredPeripheralIdentifier = peripheral.identifier
+        preferredPeripheralName = peripheral.name
+        isAttemptingPreferredReconnect = false
+        isUserDisconnected = false
         self.peripheral = peripheral
         peripheral.delegate = self
         connectionState = .connecting
@@ -116,21 +143,38 @@ final class BluetoothManager: NSObject {
 
     func disconnect() {
         print("[BLE] Demande de déconnexion volontaire")
-        keepAliveTask?.cancel()
-        keepAliveTask = nil
-        disconnectWatchTask?.cancel()
-        disconnectWatchTask = nil
-
+        isUserDisconnected = true
         if let p = peripheral {
-            if let c = notifyChar {
-                p.setNotifyValue(false, for: c)
-            }
+            if let c = notifyChar { p.setNotifyValue(false, for: c) }
             centralManager?.cancelPeripheralConnection(p)
         }
+        clearConnection()
+        connectionState = .disconnected
+    }
+
+    /// User explicitly disconnected → don't auto-rescan after disconnect.
+    /// Reset on `connect()` / `clearPreferredPeripheral()`.
+    private var isUserDisconnected = false
+
+    /// Tears down all per-connection state. Doesn't touch user-intent flags
+    /// (preferredPeripheral, autoReconnectEnabled).
+    private func clearConnection() {
+        keepAliveTask?.cancel(); keepAliveTask = nil
+        disconnectWatchTask?.cancel(); disconnectWatchTask = nil
         peripheral = nil
         notifyChar = nil
         writeChar = nil
-        connectionState = .disconnected
+        connectedPeripheralIdentifier = nil
+        connectedPeripheralName = nil
+        telemetry.isReceiving = false
+        isAttemptingPreferredReconnect = false
+    }
+
+    func clearPreferredPeripheral() {
+        preferredPeripheralIdentifier = nil
+        preferredPeripheralName = nil
+        isAttemptingPreferredReconnect = false
+        isUserDisconnected = true
     }
 
     // MARK: - Resistance Command
@@ -168,7 +212,9 @@ final class BluetoothManager: NSObject {
 
     private func sendResistance() {
         guard let writeChar, let peripheral else { return }
-        let cmd = Self.resistanceCommand(level: targetResistance)
+        let level = max(1, min(32, targetResistance))
+        lastSentResistanceLevel = level
+        let cmd = Self.resistanceCommand(level: level)
         logFrame(cmd, direction: .sent)
         peripheral.writeValue(cmd, for: writeChar, type: .withoutResponse)
     }
@@ -219,7 +265,7 @@ extension BluetoothManager: CBCentralManagerDelegate {
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         isBluetoothPoweredOn = (central.state == .poweredOn)
         print("[BLE] Etat du gestionnaire Bluetooth (CBCentralManager) : \(central.state.rawValue)")
-        if central.state == .poweredOn, connectionState == .disconnected {
+        if central.state == .poweredOn, connectionState == .disconnected, !isUserDisconnected {
             startScanning()
         }
     }
@@ -237,15 +283,24 @@ extension BluetoothManager: CBCentralManagerDelegate {
         }
         
         print("[BLE] 🔎 Appareil trouvé : \(name) [\(peripheral.identifier)] avec RSSI \(RSSI)")
-        
-        // Auto-connect if not already connected and not showing selection? 
-        // For now, let's keep it simple: if we are in scanning state, we might want selection.
-        // But to maintain backward compatibility, let's only auto-connect if we don't have a selection UI active.
-        // Actually, let's let the UI handle the connection by calling `connect(to:)`.
+
+        guard connectionState == .scanning,
+              self.peripheral == nil,
+              !isAttemptingPreferredReconnect,
+              let preferredPeripheralIdentifier,
+              preferredPeripheralIdentifier == peripheral.identifier else {
+            return
+        }
+
+        isAttemptingPreferredReconnect = true
+        connect(to: peripheral)
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
         print("[BLE] ✅ Connecté au périphérique ! Découverte des services...")
+        isAttemptingPreferredReconnect = false
+        connectedPeripheralIdentifier = peripheral.identifier
+        connectedPeripheralName = peripheral.name
         connectionState = .initializing
         peripheral.discoverServices(nil)
     }
@@ -254,16 +309,27 @@ extension BluetoothManager: CBCentralManagerDelegate {
                         didDisconnectPeripheral peripheral: CBPeripheral,
                         error: Error?) {
         print("[BLE] ⚠️ Déconnecté de \(peripheral.name ?? "Inconnu"). Erreur: \(error?.localizedDescription ?? "Aucune")")
-        connectionState = .disconnected
-        telemetry.isReceiving = false
-        keepAliveTask?.cancel()
+        clearConnection()
+        // Unexpected drop while we still own a preferred device → rescan; the
+        // existing didDiscover path will auto-reconnect to it.
+        if !isUserDisconnected, preferredPeripheralIdentifier != nil,
+           centralManager?.state == .poweredOn {
+            startScanning()
+        } else {
+            connectionState = .disconnected
+        }
     }
 
     func centralManager(_ central: CBCentralManager,
                         didFailToConnect peripheral: CBPeripheral,
                         error: Error?) {
         print("[BLE] ❌ Échec de la connexion à \(peripheral.name ?? "Inconnu"). Erreur: \(error?.localizedDescription ?? "Aucune")")
-        connectionState = .error
+        isAttemptingPreferredReconnect = false
+        if !isUserDisconnected, preferredPeripheralIdentifier != nil {
+            startScanning()
+        } else {
+            connectionState = .error
+        }
     }
 }
 
