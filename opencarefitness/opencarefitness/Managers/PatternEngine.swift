@@ -119,20 +119,19 @@ final class PatternEngine {
     }
 
     func incrementIncline() {
-        // For flat (maxBaseIncline == 0) the multiplier has no visible effect.
-        guard selectedPattern.maxBaseIncline > 0 else { return }
-        let maxAllowed = 15.0 / selectedPattern.maxBaseIncline
-        if difficultyMultiplier < maxAllowed {
-            difficultyMultiplier = min(maxAllowed, difficultyMultiplier + 0.1)
+        // Cap so the user can't push past the 15% hardware ceiling. For Flat
+        // (maxBaseIncline == 0) the multiplier has no visible effect, but we
+        // still let the user bump the offset for symmetry with the −  button.
+        let cap = selectedPattern.maxBaseIncline > 0
+            ? 15.0 / selectedPattern.maxBaseIncline
+            : 3.0
+        if difficultyMultiplier < cap {
+            difficultyMultiplier = min(cap, difficultyMultiplier + 0.1)
         }
     }
 
     func decrementIncline() {
         difficultyMultiplier = max(0.1, difficultyMultiplier - 0.1)
-    }
-
-    func resetOffset() {
-        difficultyMultiplier = difficulty.multiplier
     }
 
     // MARK: - Private

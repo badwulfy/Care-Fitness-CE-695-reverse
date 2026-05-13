@@ -73,12 +73,22 @@ final class WorkoutSessionManager {
         writeSnapshot(force: true)
     }
     
-    func stop(context: ModelContext) -> WorkoutSession {
+    /// Returns the persisted session, or `nil` for empty/test runs (distance
+     /// stayed at 0 → not worth keeping in history or Health).
+    @discardableResult
+    func stop(context: ModelContext) -> WorkoutSession? {
         engine.stop()
         bleManager.targetResistance = 1
-        
+
         Task { await healthManager.endWorkout() }
-        
+
+        // Empty run (never pedaled / bike never sent telemetry) → discard.
+        guard bleManager.telemetry.distance > 0 else {
+            lastSession = nil
+            clearSnapshot()
+            return nil
+        }
+
         let session = WorkoutSession(
             date: .now,
             patternName: engine.selectedPattern.rawValue,
@@ -92,14 +102,12 @@ final class WorkoutSessionManager {
             avgRPM: rpmSamples.isEmpty ? 0 : rpmSamples.reduce(0, +) / rpmSamples.count,
             maxIncline: maxIncline
         )
-        
+
         context.insert(session)
         lastSession = session
         clearSnapshot()
 
         #if os(iOS)
-        // Persist an iPhone-side HKWorkout summary (bike data). Skipped inside
-        // HealthManager when the Watch already saved its own workout.
         Task { [healthManager, session] in
             await healthManager.saveWorkoutSummary(
                 duration: Double(session.durationSeconds),

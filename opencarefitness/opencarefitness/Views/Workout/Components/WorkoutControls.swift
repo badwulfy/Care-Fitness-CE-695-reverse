@@ -23,25 +23,7 @@ struct WorkoutControls: View {
             }
             .buttonStyle(.plain)
 
-            // Override indicator / Reset
-            if isOverridden {
-                Button {
-                    withAnimation { engine.resetOffset() }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.counterclockwise")
-                        Text("RESET")
-                            .font(.caption.weight(.bold))
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(height: 56)
-                    .glassPanel(cornerRadius: 28)
-                }
-                .buttonStyle(.plain)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Spacer().frame(maxWidth: .infinity)
-            }
+            Spacer().frame(maxWidth: .infinity)
 
             // Pause / Resume
             Button {
@@ -84,9 +66,5 @@ struct WorkoutControls: View {
             }
             .buttonStyle(.plain)
         }
-    }
-    
-    private var isOverridden: Bool {
-        abs(engine.difficultyMultiplier - engine.difficulty.multiplier) > 0.01
     }
 }

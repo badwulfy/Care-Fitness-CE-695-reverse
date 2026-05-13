@@ -61,7 +61,7 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
 
     var description: String {
         switch self {
-        case .flat:         return "Sans inclinaison. Idéal pour récupération ou échauffement."
+        case .flat:         return "Inclinaison constante. Facile = 0%, monte avec la difficulté."
         case .progression:  return "Montée progressive du début à la fin."
         case .vShape:       return "Descente symétrique jusqu'au creux, puis remontée."
         case .pyramid:      return "Montée jusqu'au milieu, puis descente symétrique."
@@ -83,6 +83,14 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
     /// per session. Other patterns ignore it.
     func incline(at progress: Double, multiplier: Double, seed: UInt64 = 0) -> Double {
         let t = max(0.0, min(1.0, progress))
+
+        // Flat can't use the standard base*multiplier curve because Easy
+        // (×0.4) must give a *true* 0%. Map the multiplier directly instead:
+        // Easy→0, Medium→2, Hard→4, Extreme→6.
+        if self == .flat {
+            return min(15.0, max(0.0, multiplier - 0.4) * 6.67)
+        }
+
         var base: Double = 0.0
 
         switch self {
@@ -164,7 +172,7 @@ enum WorkoutPattern: String, CaseIterable, Identifiable, Codable {
     /// manual increments and by chart code to size the y-axis.
     var maxBaseIncline: Double {
         switch self {
-        case .flat:         return 0.0
+        case .flat:         return 6.0  // value at Extreme (multiplier 1.3)
         case .progression:  return 11.5
         case .vShape:       return 11.5
         case .pyramid:      return 11.5

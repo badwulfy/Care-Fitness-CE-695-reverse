@@ -84,7 +84,7 @@ struct PatternPreviewChart: View {
             ForEach(Array(samples.enumerated()), id: \.offset) { index, value in
                 BarMark(
                     x: .value("T", String(index)),
-                    y: .value("V", max(0.5, value))
+                    y: .value("V", value)
                 )
                 .foregroundStyle(
                     isSelected
@@ -93,6 +93,11 @@ struct PatternPreviewChart: View {
                 )
                 .cornerRadius(1)
             }
+            // Baseline so an all-zero pattern (Plat at Facile) still reads as
+            // a chart — a thin horizontal rule at y=0.
+            RuleMark(y: .value("Baseline", 0))
+                .foregroundStyle(isSelected ? accentColor.opacity(0.5) : Color.white.opacity(0.15))
+                .lineStyle(StrokeStyle(lineWidth: 1))
         }
         .chartXAxis(.hidden)
         .chartYAxis(.hidden)

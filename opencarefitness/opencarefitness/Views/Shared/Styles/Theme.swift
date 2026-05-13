@@ -105,7 +105,7 @@ struct ForceOrientationModifier: ViewModifier {
             }
             .onDisappear {
                 if UIDevice.current.userInterfaceIdiom == .phone {
-                    DeviceOrientationHelper.lockOrientation(.allButUpsideDown)
+                    DeviceOrientationHelper.lockOrientation(.portrait)
                 }
             }
     }

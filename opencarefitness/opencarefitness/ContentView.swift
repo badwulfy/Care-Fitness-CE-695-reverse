@@ -218,30 +218,43 @@ struct ContentView: View {
         // a les mains sur le guidon, l'inactivité tactile est attendue.
         UIApplication.shared.isIdleTimerDisabled = true
 
-        if UIDevice.current.userInterfaceIdiom == .phone,
-           let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .landscapeRight))
+        // Trigger the rotation, then wait for iOS to actually rotate before
+        // presenting WorkoutView. Otherwise the fullScreenCover slides up in
+        // portrait and rotates afterwards (jarring portrait → landscape flash).
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            DeviceOrientationHelper.lockOrientation(.landscapeRight)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                nav.navigate(to: .workout)
+            }
+        } else {
+            nav.navigate(to: .workout)
         }
-        #endif
-
+        #else
         nav.navigate(to: .workout)
+        #endif
     }
 
     private func stopWorkout() {
-        _ = sessionManager.stop(context: modelContext)
+        let saved = sessionManager.stop(context: modelContext)
         autoStartCooldownUntil = Date().addingTimeInterval(8)
         setupActivitySeconds = 0
+        let nextScreen: AppScreen = (saved == nil) ? .setup : .summary
 
         #if os(iOS)
         UIApplication.shared.isIdleTimerDisabled = false
 
-        if UIDevice.current.userInterfaceIdiom == .phone,
-           let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
-            windowScene.requestGeometryUpdate(.iOS(interfaceOrientations: .portrait))
+        // Same idea reversed: rotate back to portrait first, then swap views.
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            DeviceOrientationHelper.lockOrientation(.portrait)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                nav.navigate(to: nextScreen)
+            }
+        } else {
+            nav.navigate(to: nextScreen)
         }
+        #else
+        nav.navigate(to: nextScreen)
         #endif
-
-        nav.navigate(to: .summary)
     }
 
     private func handleScenePhaseChange(_ oldPhase: ScenePhase, _ newPhase: ScenePhase) {

@@ -71,7 +71,9 @@ struct opencarefitnessApp: App {
 }
 
 class AppDelegate: NSObject, UIApplicationDelegate {
-    static var orientationLock = UIInterfaceOrientationMask.allButUpsideDown
+    // Default to portrait; WorkoutView flips this to .landscapeRight on appear
+    // (and back to .portrait on disappear) via DeviceOrientationHelper.
+    static var orientationLock = UIInterfaceOrientationMask.portrait
 
     func application(_ application: UIApplication, supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         return AppDelegate.orientationLock
